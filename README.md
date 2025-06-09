@@ -48,7 +48,7 @@ Chrome MCP Server is a Chrome extension-based **Model Context Protocol (MCP) ser
 
 1. **Download the latest Chrome extension from GitHub**
 
-Download link: https://github.com/hangwin/chrome-mcp-server/releases
+Download link: https://github.com/hangwin/mcp-chrome/releases
 
 2. **Install mcp-chrome-bridge globally**
 
