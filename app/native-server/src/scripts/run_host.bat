@@ -20,8 +20,7 @@ if not exist "%LOG_DIR%" (
 )
 
 REM Generate a timestamp for unique log file names (Format: YYYYMMDD_HHMMSS).
-for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /format:list') do set "DATETIME_STR=%%I"
-set "TIMESTAMP=%DATETIME_STR:~0,8%_%DATETIME_STR:~8,6%"
+for /f %%i in ('powershell -NoProfile -Command "Get-Date -Format 'yyyyMMdd_HHmmss'"') do set "TIMESTAMP=%%i"
 
 REM Define the full paths for the wrapper's main log and the stderr log from the Node.js process.
 set "WRAPPER_LOG=%LOG_DIR%\native_host_wrapper_windows_%TIMESTAMP%.log"
