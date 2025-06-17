@@ -7,12 +7,16 @@
     </div>
     <div class="content">
       <div class="section">
-        <h2 class="section-title">Native Server 配置</h2>
+        <h2 class="section-title">{{ getMessage('nativeServerConfig') }}</h2>
         <div class="config-card">
           <div class="status-section">
             <div class="status-header">
-              <p class="status-label">运行状态</p>
-              <button class="refresh-status-button" @click="refreshServerStatus" title="刷新状态">
+              <p class="status-label">{{ getMessage('runningStatus') }}</p>
+              <button
+                class="refresh-status-button"
+                @click="refreshServerStatus"
+                :title="getMessage('refreshStatus')"
+              >
                 🔄
               </button>
             </div>
@@ -21,13 +25,14 @@
               <span class="status-text">{{ getStatusText() }}</span>
             </div>
             <div v-if="serverStatus.lastUpdated" class="status-timestamp">
-              最后更新: {{ new Date(serverStatus.lastUpdated).toLocaleTimeString() }}
+              {{ getMessage('lastUpdated') }}
+              {{ new Date(serverStatus.lastUpdated).toLocaleTimeString() }}
             </div>
           </div>
 
           <div v-if="showMcpConfig" class="mcp-config-section">
             <div class="mcp-config-header">
-              <p class="mcp-config-label">MCP 服务器配置</p>
+              <p class="mcp-config-label">{{ getMessage('mcpServerConfig') }}</p>
               <button class="copy-config-button" @click="copyMcpConfig">
                 {{ copyButtonText }}
               </button>
@@ -37,7 +42,7 @@
             </div>
           </div>
           <div class="port-section">
-            <label for="port" class="port-label">连接端口</label>
+            <label for="port" class="port-label">{{ getMessage('connectionPort') }}</label>
             <input
               type="text"
               id="port"
@@ -50,14 +55,18 @@
           <button class="connect-button" :disabled="isConnecting" @click="testNativeConnection">
             <BoltIcon />
             <span>{{
-              isConnecting ? '连接中...' : nativeConnectionStatus === 'connected' ? '断开' : '连接'
+              isConnecting
+                ? getMessage('connecting')
+                : nativeConnectionStatus === 'connected'
+                  ? getMessage('disconnect')
+                  : getMessage('connect')
             }}</span>
           </button>
         </div>
       </div>
 
       <div class="section">
-        <h2 class="section-title">语义引擎</h2>
+        <h2 class="section-title">{{ getMessage('semanticEngine') }}</h2>
         <div class="semantic-engine-card">
           <div class="semantic-engine-status">
             <div class="status-info">
@@ -65,7 +74,8 @@
               <span class="status-text">{{ getSemanticEngineStatusText() }}</span>
             </div>
             <div v-if="semanticEngineLastUpdated" class="status-timestamp">
-              最后更新: {{ new Date(semanticEngineLastUpdated).toLocaleTimeString() }}
+              {{ getMessage('lastUpdated') }}
+              {{ new Date(semanticEngineLastUpdated).toLocaleTimeString() }}
             </div>
           </div>
 
@@ -88,7 +98,7 @@
       </div>
 
       <div class="section">
-        <h2 class="section-title">Embedding模型</h2>
+        <h2 class="section-title">{{ getMessage('embeddingModel') }}</h2>
 
         <ProgressIndicator
           v-if="isModelSwitching || isModelDownloading"
@@ -100,8 +110,10 @@
           <div class="error-content">
             <div class="error-icon">⚠️</div>
             <div class="error-details">
-              <p class="error-title">模型初始化失败</p>
-              <p class="error-message">{{ modelErrorMessage || '模型加载失败' }}</p>
+              <p class="error-title">{{ getMessage('semanticEngineInitFailed') }}</p>
+              <p class="error-message">{{
+                modelErrorMessage || getMessage('semanticEngineInitFailed')
+              }}</p>
               <p class="error-suggestion">{{ getErrorTypeText() }}</p>
             </div>
           </div>
@@ -111,7 +123,7 @@
             :disabled="isModelSwitching || isModelDownloading"
           >
             <span>🔄</span>
-            <span>重试</span>
+            <span>{{ getMessage('retry') }}</span>
           </button>
         </div>
 
@@ -151,11 +163,11 @@
       </div>
 
       <div class="section">
-        <h2 class="section-title">索引数据管理</h2>
+        <h2 class="section-title">{{ getMessage('indexDataManagement') }}</h2>
         <div class="stats-grid">
           <div class="stats-card">
             <div class="stats-header">
-              <p class="stats-label">已索引页面</p>
+              <p class="stats-label">{{ getMessage('indexedPages') }}</p>
               <span class="stats-icon violet">
                 <DocumentIcon />
               </span>
@@ -165,7 +177,7 @@
 
           <div class="stats-card">
             <div class="stats-header">
-              <p class="stats-label">索引大小</p>
+              <p class="stats-label">{{ getMessage('indexSize') }}</p>
               <span class="stats-icon teal">
                 <DatabaseIcon />
               </span>
@@ -175,7 +187,7 @@
 
           <div class="stats-card">
             <div class="stats-header">
-              <p class="stats-label">活跃标签页</p>
+              <p class="stats-label">{{ getMessage('activeTabs') }}</p>
               <span class="stats-icon blue">
                 <TabIcon />
               </span>
@@ -185,7 +197,7 @@
 
           <div class="stats-card">
             <div class="stats-header">
-              <p class="stats-label">向量文档</p>
+              <p class="stats-label">{{ getMessage('vectorDocuments') }}</p>
               <span class="stats-icon green">
                 <VectorIcon />
               </span>
@@ -206,7 +218,7 @@
           @click="showClearConfirmation = true"
         >
           <TrashIcon />
-          <span>{{ isClearingData ? '清空中...' : '清空所有数据' }}</span>
+          <span>{{ isClearingData ? getMessage('clearing') : getMessage('clearAllData') }}</span>
         </button>
       </div>
 
@@ -225,14 +237,18 @@
 
     <ConfirmDialog
       :visible="showClearConfirmation"
-      title="确认清空数据"
-      message="此操作将清空所有已索引的网页内容和向量数据，包括："
-      :items="['所有网页的文本内容索引', '向量嵌入数据', '搜索历史和缓存']"
-      warning="此操作不可撤销！清空后需要重新浏览网页来重建索引。"
+      :title="getMessage('confirmClearData')"
+      :message="getMessage('clearDataWarning')"
+      :items="[
+        getMessage('clearDataList1'),
+        getMessage('clearDataList2'),
+        getMessage('clearDataList3'),
+      ]"
+      :warning="getMessage('clearDataIrreversible')"
       icon="⚠️"
-      confirm-text="确认清空"
-      cancel-text="取消"
-      confirming-text="清空中..."
+      :confirm-text="getMessage('confirmClear')"
+      :cancel-text="getMessage('cancel')"
+      :confirming-text="getMessage('clearing')"
       :is-confirming="isClearingData"
       @confirm="confirmClearAllData"
       @cancel="hideClearDataConfirmation"
@@ -251,6 +267,7 @@ import {
   cleanupModelCache,
 } from '@/utils/semantic-similarity-engine';
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
+import { getMessage } from '@/utils/i18n';
 
 import ConfirmDialog from './components/ConfirmDialog.vue';
 import ProgressIndicator from './components/ProgressIndicator.vue';
@@ -282,7 +299,7 @@ const showMcpConfig = computed(() => {
   return nativeConnectionStatus.value === 'connected' && serverStatus.value.isRunning;
 });
 
-const copyButtonText = ref('复制配置');
+const copyButtonText = ref(getMessage('copyConfig'));
 
 const mcpConfigJson = computed(() => {
   const port = serverStatus.value.port || nativeServerPort.value;
@@ -368,14 +385,14 @@ const getStatusClass = () => {
 const getStatusText = () => {
   if (nativeConnectionStatus.value === 'connected') {
     if (serverStatus.value.isRunning) {
-      return `服务运行中 (端口: ${serverStatus.value.port || 'Unknown'})`;
+      return getMessage('serviceRunning', [(serverStatus.value.port || 'Unknown').toString()]);
     } else {
-      return '已连接，服务未启动';
+      return getMessage('connectedServiceNotStarted');
     }
   } else if (nativeConnectionStatus.value === 'disconnected') {
-    return '服务未连接';
+    return getMessage('serviceNotConnected');
   } else {
-    return '检测中...';
+    return getMessage('detecting');
   }
 };
 
@@ -388,22 +405,22 @@ const formatIndexSize = () => {
 const getModelDescription = (model: any) => {
   switch (model.preset) {
     case 'multilingual-e5-small':
-      return '轻量级多语言模型';
+      return getMessage('lightweightModel');
     case 'multilingual-e5-base':
-      return '比e5-small稍大，但效果更好';
+      return getMessage('betterThanSmall');
     default:
-      return '多语言语义模型';
+      return getMessage('multilingualModel');
   }
 };
 
 const getPerformanceText = (performance: string) => {
   switch (performance) {
     case 'fast':
-      return '快速';
+      return getMessage('fast');
     case 'balanced':
-      return '平衡';
+      return getMessage('balanced');
     case 'accurate':
-      return '精确';
+      return getMessage('accurate');
     default:
       return performance;
   }
@@ -412,14 +429,14 @@ const getPerformanceText = (performance: string) => {
 const getSemanticEngineStatusText = () => {
   switch (semanticEngineStatus.value) {
     case 'ready':
-      return '语义引擎已就绪';
+      return getMessage('semanticEngineReady');
     case 'initializing':
-      return '语义引擎初始化中...';
+      return getMessage('semanticEngineInitializing');
     case 'error':
-      return '语义引擎初始化失败';
+      return getMessage('semanticEngineInitFailed');
     case 'idle':
     default:
-      return '语义引擎未初始化';
+      return getMessage('semanticEngineNotInit');
   }
 };
 
@@ -443,9 +460,9 @@ const getActiveTabsCount = () => {
 
 const getProgressText = () => {
   if (isModelDownloading.value) {
-    return `下载模型中... ${modelDownloadProgress.value}%`;
+    return getMessage('downloadingModel', [modelDownloadProgress.value.toString()]);
   } else if (isModelSwitching.value) {
-    return modelSwitchProgress.value || '切换模型中...';
+    return modelSwitchProgress.value || getMessage('switchingModel');
   }
   return '';
 };
@@ -453,26 +470,26 @@ const getProgressText = () => {
 const getErrorTypeText = () => {
   switch (modelErrorType.value) {
     case 'network':
-      return '网络连接错误，请检查网络连接后重试';
+      return getMessage('networkError');
     case 'file':
-      return '模型文件损坏或不完整，请重试下载';
+      return getMessage('modelCorrupted');
     case 'unknown':
     default:
-      return '未知错误，请检查你的网络是否可以访问huggingface';
+      return getMessage('unknownError');
   }
 };
 
 const getSemanticEngineButtonText = () => {
   switch (semanticEngineStatus.value) {
     case 'ready':
-      return '重新初始化';
+      return getMessage('reinitialize');
     case 'initializing':
-      return '初始化中...';
+      return getMessage('initializing');
     case 'error':
-      return '重新初始化';
+      return getMessage('reinitialize');
     case 'idle':
     default:
-      return '初始化语义引擎';
+      return getMessage('initSemanticEngine');
   }
 };
 
