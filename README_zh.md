@@ -272,3 +272,8 @@ https://github.com/user-attachments/assets/ff160f48-58e0-4c76-a6b0-c4e1f91370c8
 - [架构设计](docs/ARCHITECTURE_zh.md) - 详细的技术架构说明
 - [工具列表](docs/TOOLS_zh.md) - 完整的工具 API 文档
 - [故障排除](docs/TROUBLESHOOTING_zh.md) - 常见问题解决方案
+
+## 微信交流群
+
+![IMG_6248](https://github.com/user-attachments/assets/84de0cd1-6a30-4f10-93c4-c219a9522cbb)
+
