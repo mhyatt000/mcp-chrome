@@ -1,6 +1,7 @@
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
+import { getMessage } from '@/utils/i18n';
 
 /**
  * Bookmark search tool parameters interface
@@ -152,7 +153,7 @@ async function createFolderPath(
     const bookmarkBarFolder = rootChildren.find(
       (node) =>
         !node.url &&
-        (node.title === '书签栏' ||
+        (node.title === getMessage('bookmarksBarLabel') ||
           node.title === 'Bookmarks bar' ||
           node.title === 'Bookmarks Bar'),
     );
@@ -260,7 +261,9 @@ class BookmarkSearchTool extends BaseBrowserToolExecutor {
   async execute(args: BookmarkSearchToolParams): Promise<ToolResult> {
     const { query = '', maxResults = 50, folderPath } = args;
 
-    console.log(`BookmarkSearchTool: Searching bookmarks, keywords: "${query}", folder path: "${folderPath}"`);
+    console.log(
+      `BookmarkSearchTool: Searching bookmarks, keywords: "${query}", folder path: "${folderPath}"`,
+    );
 
     try {
       let bookmarksToSearch: chrome.bookmarks.BookmarkTreeNode[] = [];
@@ -432,7 +435,7 @@ class BookmarkAddTool extends BaseBrowserToolExecutor {
         const bookmarkBarFolder = rootChildren.find(
           (node) =>
             !node.url &&
-            (node.title === '书签栏' ||
+            (node.title === getMessage('bookmarksBarLabel') ||
               node.title === 'Bookmarks bar' ||
               node.title === 'Bookmarks Bar'),
         );
@@ -519,7 +522,9 @@ class BookmarkDeleteTool extends BaseBrowserToolExecutor {
           if (nodes && nodes.length > 0 && nodes[0].url) {
             bookmarksToDelete = nodes;
           } else {
-            return createErrorResponse(`Bookmark with ID "${bookmarkId}" not found, or the ID does not correspond to a bookmark`);
+            return createErrorResponse(
+              `Bookmark with ID "${bookmarkId}" not found, or the ID does not correspond to a bookmark`,
+            );
           }
         } catch (error) {
           return createErrorResponse(`Invalid bookmark ID: "${bookmarkId}"`);
@@ -553,7 +558,9 @@ class BookmarkDeleteTool extends BaseBrowserToolExecutor {
           });
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
-          errors.push(`Failed to delete bookmark "${bookmark.title}" (ID: ${bookmark.id}): ${errorMsg}`);
+          errors.push(
+            `Failed to delete bookmark "${bookmark.title}" (ID: ${bookmark.id}): ${errorMsg}`,
+          );
         }
       }
 

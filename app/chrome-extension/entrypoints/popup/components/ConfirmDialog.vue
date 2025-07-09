@@ -35,6 +35,7 @@
 </template>
 
 <script lang="ts" setup>
+import { getMessage } from '@/utils/i18n';
 interface Props {
   visible: boolean;
   title: string;
@@ -55,9 +56,9 @@ interface Emits {
 
 withDefaults(defineProps<Props>(), {
   icon: '⚠️',
-  confirmText: '确认',
-  cancelText: '取消',
-  confirmingText: '处理中...',
+  confirmText: getMessage('confirmButton'),
+  cancelText: getMessage('cancelButton'),
+  confirmingText: getMessage('processingStatus'),
   isConfirming: false,
 });
 
