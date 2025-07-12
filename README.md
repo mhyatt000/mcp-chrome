@@ -196,6 +196,7 @@ Complete tool list: [Complete Tool List](docs/TOOLS.md)
 
 prompt: [excalidraw-prompt](prompt/excalidraw-prompt.md)
 Instruction: Help me summarize the current page content, then draw a diagram to aid my understanding.
+https://www.youtube.com/watch?v=3fBPdUBWVz0
 
 https://github.com/user-attachments/assets/fd17209b-303d-48db-9e5e-3717141df183
 
@@ -203,6 +204,7 @@ https://github.com/user-attachments/assets/fd17209b-303d-48db-9e5e-3717141df183
 
 prompt: [excalidraw-prompt](prompt/excalidraw-prompt.md)|[content-analize](prompt/content-analize.md)
 Instruction: First, analyze the content of the image, and then replicate the image by combining the analysis with the content of the image.
+https://www.youtube.com/watch?v=tEPdHZBzbZk
 
 https://github.com/user-attachments/assets/60d12b1a-9b74-40f4-994c-95e8fa1fc8d3
 
@@ -210,6 +212,8 @@ https://github.com/user-attachments/assets/60d12b1a-9b74-40f4-994c-95e8fa1fc8d3
 
 prompt: [modify-web-prompt](prompt/modify-web.md)
 Instruction: Help me modify the current page's style and remove advertisements.
+https://youtu.be/twI6apRKHsk
+
 
 https://github.com/user-attachments/assets/69cb561c-2e1e-4665-9411-4a3185f9643e
 
@@ -217,29 +221,40 @@ https://github.com/user-attachments/assets/69cb561c-2e1e-4665-9411-4a3185f9643e
 
 query: I want to know what the search API for Xiaohongshu is and what the response structure looks like
 
+https://youtu.be/1hHKr7XKqnQ
+
+
 https://github.com/user-attachments/assets/063f44ae-1754-46b6-b141-5988c86e4d96
 
 ### AI helps analyze your browsing history
 
 query: Analyze my browsing history from the past month
 
+https://youtu.be/jf2UZfrR2Vk
+
+
 https://github.com/user-attachments/assets/e7a35118-e50e-4b1c-a790-0878aa2505ab
 
 ### Web page conversation
 
 query: Translate and summarize the current web page
+https://youtu.be/FlJKS9UQyC8
 
 https://github.com/user-attachments/assets/08aa86aa-7706-4df2-b400-576e2c7fcc7f
 
 ### AI automatically takes screenshots for you (web page screenshots)
 
 query: Take a screenshot of Hugging Face's homepage
+https://youtu.be/7ycK6iksWi4
+
 
 https://github.com/user-attachments/assets/b081e41b-6309-40d6-885b-0da01691b12e
 
 ### AI automatically takes screenshots for you (element screenshots)
 
 query: Capture the icon from Hugging Face's homepage
+https://youtu.be/ev8VivANIrk
+
 
 https://github.com/user-attachments/assets/25657076-b84b-4459-a72f-90f896f06364
 
@@ -247,11 +262,17 @@ https://github.com/user-attachments/assets/25657076-b84b-4459-a72f-90f896f06364
 
 query: Add the current page to bookmarks and put it in an appropriate folder
 
+https://youtu.be/R_83arKmFTo
+
+
 https://github.com/user-attachments/assets/73c1ea26-65fb-4b5e-b537-e32fa9bcfa52
 
 ### Automatically close web pages
 
 query: Close all shadcn-related web pages
+
+https://youtu.be/2wzUT6eNVg4
+
 
 https://github.com/user-attachments/assets/ff160f48-58e0-4c76-a6b0-c4e1f91370c8
 
