@@ -79,7 +79,7 @@ if (window.__CLICK_HELPER_INITIALIZED__) {
           text: element.textContent?.trim().substring(0, 100) || '',
           href: element.href || null,
           type: element.type || null,
-          isVisible: isElementVisible(element),
+          isVisible: true,
           rect: {
             x: rect.x,
             y: rect.y,
@@ -93,19 +93,16 @@ if (window.__CLICK_HELPER_INITIALIZED__) {
           clickMethod: 'selector',
         };
 
+        // First sroll so that the element is in view, then check visibility.
+        element.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' });
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        elementInfo.isVisible = isElementVisible(element);
         if (!elementInfo.isVisible) {
           return {
             error: `Element with selector "${selector}" is not visible`,
             elementInfo,
           };
         }
-
-        clickX = rect.left + rect.width / 2;
-        clickY = rect.top + rect.height / 2;
-
-        element.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' });
-
-        await new Promise((resolve) => setTimeout(resolve, 100));
 
         const updatedRect = element.getBoundingClientRect();
         clickX = updatedRect.left + updatedRect.width / 2;
