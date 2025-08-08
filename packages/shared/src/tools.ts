@@ -25,6 +25,7 @@ export const TOOL_NAMES = {
     INJECT_SCRIPT: 'chrome_inject_script',
     SEND_COMMAND_TO_INJECT_SCRIPT: 'chrome_send_command_to_inject_script',
     CONSOLE: 'chrome_console',
+    FILE_UPLOAD: 'chrome_upload_file',
   },
 };
 
@@ -532,6 +533,40 @@ export const TOOL_SCHEMAS: Tool[] = [
         },
       },
       required: [],
+    },
+  },
+  {
+    name: TOOL_NAMES.BROWSER.FILE_UPLOAD,
+    description: 'Upload files to web forms with file input elements using Chrome DevTools Protocol',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        selector: {
+          type: 'string',
+          description: 'CSS selector for the file input element (input[type="file"])',
+        },
+        filePath: {
+          type: 'string',
+          description: 'Local file path to upload',
+        },
+        fileUrl: {
+          type: 'string',
+          description: 'URL to download file from before uploading',
+        },
+        base64Data: {
+          type: 'string',
+          description: 'Base64 encoded file data to upload',
+        },
+        fileName: {
+          type: 'string',
+          description: 'Optional filename when using base64 or URL (default: "uploaded-file")',
+        },
+        multiple: {
+          type: 'boolean',
+          description: 'Whether the input accepts multiple files (default: false)',
+        },
+      },
+      required: ['selector'],
     },
   },
 ];
