@@ -35,12 +35,54 @@ export const TOOL_NAMES = {
     PERFORMANCE_STOP_TRACE: 'performance_stop_trace',
     PERFORMANCE_ANALYZE_INSIGHT: 'performance_analyze_insight',
   },
+  RECORD_REPLAY: {
+    FLOW_RUN: 'record_replay_flow_run',
+    LIST_PUBLISHED: 'record_replay_list_published',
+  },
 };
 
 export const TOOL_SCHEMAS: Tool[] = [
   {
     name: TOOL_NAMES.BROWSER.GET_WINDOWS_AND_TABS,
     description: 'Get all currently open browser windows and tabs',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: TOOL_NAMES.RECORD_REPLAY.FLOW_RUN,
+    description:
+      'Run a recorded flow by ID with optional variables and run options. Returns a standardized run result.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        flowId: { type: 'string', description: 'ID of the flow to run' },
+        args: {
+          type: 'object',
+          description: 'Variable values for the flow (flat object of key/value)',
+        },
+        tabTarget: {
+          type: 'string',
+          description: "Target tab: 'current' or 'new' (default: current)",
+          enum: ['current', 'new'],
+        },
+        refresh: { type: 'boolean', description: 'Refresh before running (default false)' },
+        captureNetwork: {
+          type: 'boolean',
+          description: 'Capture network snippets for debugging (default false)',
+        },
+        returnLogs: { type: 'boolean', description: 'Return run logs (default false)' },
+        timeoutMs: { type: 'number', description: 'Global timeout in ms (optional)' },
+        startUrl: { type: 'string', description: 'Optional start URL to open before running' },
+      },
+      required: ['flowId'],
+    },
+  },
+  {
+    name: TOOL_NAMES.RECORD_REPLAY.LIST_PUBLISHED,
+    description: 'List published flows available as dynamic tools (for discovery).',
     inputSchema: {
       type: 'object',
       properties: {},

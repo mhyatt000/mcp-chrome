@@ -21,6 +21,19 @@ export const BACKGROUND_MESSAGE_TYPES = {
   REFRESH_SERVER_STATUS: 'refresh_server_status',
   SERVER_STATUS_CHANGED: 'server_status_changed',
   INITIALIZE_SEMANTIC_ENGINE: 'initialize_semantic_engine',
+  // Record & Replay background control and queries
+  RR_START_RECORDING: 'rr_start_recording',
+  RR_STOP_RECORDING: 'rr_stop_recording',
+  RR_LIST_FLOWS: 'rr_list_flows',
+  RR_GET_FLOW: 'rr_get_flow',
+  RR_DELETE_FLOW: 'rr_delete_flow',
+  RR_PUBLISH_FLOW: 'rr_publish_flow',
+  RR_UNPUBLISH_FLOW: 'rr_unpublish_flow',
+  RR_RUN_FLOW: 'rr_run_flow',
+  RR_SAVE_FLOW: 'rr_save_flow',
+  RR_EXPORT_FLOW: 'rr_export_flow',
+  RR_EXPORT_ALL: 'rr_export_all',
+  RR_IMPORT_FLOW: 'rr_import_flow',
 } as const;
 
 // Offscreen message types
@@ -80,6 +93,9 @@ export const TOOL_MESSAGE_TYPES = {
   // Semantic similarity engine
   SIMILARITY_ENGINE_INIT: 'similarityEngineInit',
   SIMILARITY_ENGINE_COMPUTE_BATCH: 'similarityEngineComputeBatch',
+  // Record & Replay content script bridge
+  RR_RECORDER_CONTROL: 'rr_recorder_control',
+  RR_RECORDER_EVENT: 'rr_recorder_event',
 } as const;
 
 // Type unions for type safety

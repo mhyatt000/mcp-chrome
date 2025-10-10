@@ -481,12 +481,36 @@
       }
       if (request && request.action === 'ensureRefForSelector') {
         try {
+          // Support CSS selector, XPath, or visible text search
+          const useText = !!request.useText;
+          const textQuery = String(request.text || '').trim();
           const sel = String(request.selector || '').trim();
-          if (!sel) {
-            sendResponse({ success: false, error: 'selector is required' });
-            return true;
+          let el = null;
+          if (useText && textQuery) {
+            const all = Array.from(document.querySelectorAll('body *'));
+            for (const node of all) {
+              try {
+                const cs = window.getComputedStyle(node);
+                if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0')
+                  continue;
+                const rect = /** @type {HTMLElement} */ (node).getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) continue;
+                const txt = (node.textContent || '').trim();
+                if (txt && txt.includes(textQuery)) {
+                  el = node;
+                  break;
+                }
+              } catch (_) {
+                /* ignore */
+              }
+            }
+          } else {
+            if (!sel) {
+              sendResponse({ success: false, error: 'selector is required' });
+              return true;
+            }
+            el = document.querySelector(sel);
           }
-          const el = document.querySelector(sel);
           if (!el) {
             sendResponse({ success: false, error: `selector not found: ${sel}` });
             return true;

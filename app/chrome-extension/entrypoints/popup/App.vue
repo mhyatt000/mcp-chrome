@@ -218,8 +218,46 @@
           @click="showClearConfirmation = true"
         >
           <TrashIcon />
-          <span>{{ isClearingData ? getMessage('clearingStatus') : getMessage('clearAllDataButton') }}</span>
+          <span>{{
+            isClearingData ? getMessage('clearingStatus') : getMessage('clearAllDataButton')
+          }}</span>
         </button>
+      </div>
+
+      <div class="section">
+        <h2 class="section-title">录制与回放</h2>
+        <div class="rr-grid">
+          <div class="rr-controls">
+            <button class="connect-button" @click="startRecording" :disabled="rrRecording">
+              <BoltIcon />
+              <span>{{ rrRecording ? '录制中...' : '开始录制' }}</span>
+            </button>
+            <button class="danger-button" @click="stopRecording" :disabled="!rrRecording">
+              <TrashIcon />
+              <span>停止并保存</span>
+            </button>
+            <button class="semantic-engine-button" @click="loadFlows">刷新列表</button>
+          </div>
+          <div class="rr-list">
+            <div class="row" style="gap: 8px; margin-bottom: 6px">
+              <label class="chk"
+                ><input type="checkbox" v-model="rrOnlyBound" />仅显示当前页绑定</label
+              >
+            </div>
+            <div v-if="filteredRrFlows.length === 0" class="empty">暂无录制流</div>
+            <div v-for="f in filteredRrFlows" :key="f.id" class="rr-item">
+              <div class="rr-meta">
+                <div class="rr-name">{{ f.name }}</div>
+                <div class="rr-desc">{{ f.description || '' }}</div>
+              </div>
+              <div class="rr-actions">
+                <button class="semantic-engine-button" @click="runFlow(f.id)">回放</button>
+                <button class="semantic-engine-button" @click="publishFlow(f.id)">发布</button>
+                <button class="danger-button" @click="deleteFlow(f.id)">删除</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Model Cache Management Section -->
@@ -281,6 +319,106 @@ import {
   TabIcon,
   VectorIcon,
 } from './components/icons';
+
+// Record & Replay state
+const rrRecording = ref(false);
+const rrFlows = ref<Array<{ id: string; name: string; description?: string; meta?: any }>>([]);
+const rrOnlyBound = ref(false);
+const currentTabUrl = ref<string>('');
+const filteredRrFlows = computed(() =>
+  rrOnlyBound.value ? rrFlows.value.filter(isFlowBoundToCurrent) : rrFlows.value,
+);
+
+const loadFlows = async () => {
+  try {
+    const res = await chrome.runtime.sendMessage({ type: BACKGROUND_MESSAGE_TYPES.RR_LIST_FLOWS });
+    if (res && res.success) rrFlows.value = res.flows || [];
+  } catch (e) {
+    console.error('加载录制流失败:', e);
+  }
+};
+
+function isFlowBoundToCurrent(flow: any) {
+  try {
+    const bindings = flow?.meta?.bindings || [];
+    if (!bindings.length) return false;
+    if (!currentTabUrl.value) return true;
+    const url = new URL(currentTabUrl.value);
+    return bindings.some((b: any) => {
+      if (b.type === 'domain') return url.hostname.includes(b.value);
+      if (b.type === 'path') return url.pathname.startsWith(b.value);
+      if (b.type === 'url') return (url.href || '').startsWith(b.value);
+      return false;
+    });
+  } catch {
+    return false;
+  }
+}
+
+const startRecording = async () => {
+  if (rrRecording.value) return;
+  try {
+    const res = await chrome.runtime.sendMessage({
+      type: BACKGROUND_MESSAGE_TYPES.RR_START_RECORDING,
+      meta: { name: '新录制' },
+    });
+    rrRecording.value = !!(res && res.success);
+  } catch (e) {
+    console.error('开始录制失败:', e);
+    rrRecording.value = false;
+  }
+};
+
+const stopRecording = async () => {
+  if (!rrRecording.value) return;
+  try {
+    const res = await chrome.runtime.sendMessage({
+      type: BACKGROUND_MESSAGE_TYPES.RR_STOP_RECORDING,
+    });
+    rrRecording.value = false;
+    if (res && res.success) await loadFlows();
+  } catch (e) {
+    console.error('停止录制失败:', e);
+    rrRecording.value = false;
+  }
+};
+
+const runFlow = async (flowId: string) => {
+  try {
+    const res = await chrome.runtime.sendMessage({
+      type: BACKGROUND_MESSAGE_TYPES.RR_RUN_FLOW,
+      flowId,
+      options: { returnLogs: true },
+    });
+    if (!(res && res.success)) console.warn('回放失败');
+  } catch (e) {
+    console.error('回放失败:', e);
+  }
+};
+
+const publishFlow = async (flowId: string) => {
+  try {
+    const res = await chrome.runtime.sendMessage({
+      type: BACKGROUND_MESSAGE_TYPES.RR_PUBLISH_FLOW,
+      flowId,
+    });
+    if (!(res && res.success)) console.warn('发布失败');
+  } catch (e) {
+    console.error('发布失败:', e);
+  }
+};
+
+const deleteFlow = async (flowId: string) => {
+  try {
+    const res = await chrome.runtime.sendMessage({
+      type: BACKGROUND_MESSAGE_TYPES.RR_DELETE_FLOW,
+      flowId,
+    });
+    if (res && res.success) await loadFlows();
+  } catch (e) {
+    console.error('删除失败:', e);
+  }
+};
 
 const nativeConnectionStatus = ref<'unknown' | 'connected' | 'disconnected'>('unknown');
 const isConnecting = ref(false);
@@ -385,7 +523,9 @@ const getStatusClass = () => {
 const getStatusText = () => {
   if (nativeConnectionStatus.value === 'connected') {
     if (serverStatus.value.isRunning) {
-      return getMessage('serviceRunningStatus', [(serverStatus.value.port || 'Unknown').toString()]);
+      return getMessage('serviceRunningStatus', [
+        (serverStatus.value.port || 'Unknown').toString(),
+      ]);
     } else {
       return getMessage('connectedServiceNotStartedStatus');
     }
@@ -1192,6 +1332,11 @@ onMounted(async () => {
   await checkServerStatus();
   await refreshStorageStats();
   await loadCacheStats();
+  await loadFlows();
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    currentTabUrl.value = tab?.url || '';
+  } catch {}
 
   await checkSemanticEngineStatus();
   setupServerStatusListener();
@@ -1884,6 +2029,44 @@ onUnmounted(() => {
     width: 100%;
     height: 100vh;
     border-radius: 0;
+  }
+
+  .rr-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .rr-controls {
+    display: flex;
+    gap: 8px;
+  }
+  .rr-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .rr-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px;
+    border: 1px solid #eee;
+    border-radius: 6px;
+  }
+  .rr-meta {
+    display: flex;
+    flex-direction: column;
+  }
+  .rr-name {
+    font-weight: 600;
+  }
+  .rr-desc {
+    font-size: 12px;
+    color: #666;
+  }
+  .empty {
+    color: #888;
+    font-size: 13px;
   }
 
   .header {

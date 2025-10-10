@@ -104,6 +104,10 @@ export const STORAGE_KEYS = {
   VECTOR_INDEX: 'vectorIndex',
   USERSCRIPTS: 'userscripts',
   USERSCRIPTS_DISABLED: 'userscripts_disabled',
+  // Record & Replay storage keys
+  RR_FLOWS: 'rr_flows',
+  RR_RUNS: 'rr_runs',
+  RR_PUBLISHED: 'rr_published_flows',
 } as const;
 
 // Notification Configuration
