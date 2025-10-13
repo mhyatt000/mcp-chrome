@@ -14,6 +14,7 @@
       @dragover.prevent="onDragOver"
       @drop="onDrop"
       @pane-click="onPaneClick"
+      @edge-click="onEdgeClick"
     >
       <Background patternColor="#cdcdcd" :gap="32" pattern-class="canvas-pattern" />
     </VueFlow>
@@ -48,6 +49,7 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   (e: 'selectNode', id: string | null): void;
+  (e: 'selectEdge', id: string | null): void;
   (e: 'duplicateNode', id: string): void;
   (e: 'removeNode', id: string): void;
   (e: 'connectFrom', id: string, label: 'default' | 'true' | 'false' | 'onError'): void;
@@ -206,6 +208,16 @@ function onDrop(e: DragEvent) {
 function onPaneClick() {
   // Deselect when clicking empty canvas area
   emit('selectNode', null);
+  emit('selectEdge', null);
+}
+
+function onEdgeClick(evt: any) {
+  try {
+    const id = evt?.edge?.id || null;
+    emit('selectEdge', id ? String(id) : null);
+  } catch {
+    emit('selectEdge', null);
+  }
 }
 
 // Expose zoom helpers for external toolbar

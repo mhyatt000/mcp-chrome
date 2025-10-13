@@ -14,6 +14,7 @@
         :focus-node-id="focusNodeId"
         :fit-seq="fitSeq"
         @select-node="store.selectNode"
+        @select-edge="store.selectEdge"
         @duplicate-node="store.duplicateNode"
         @remove-node="store.removeNode"
         @connect-from="store.connectFrom"
@@ -55,6 +56,20 @@
             导入
             <input type="file" accept="application/json" @change="onImport" />
           </label>
+          <button class="top-btn" @click="openRename" title="重命名工作流">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z" />
+            </svg>
+            Rename
+          </button>
           <span class="divider-vert" />
           <button
             class="top-btn"
@@ -113,7 +128,7 @@
         :flow="store.flowLocal"
         :palette-types="store.paletteTypes"
         :subflow-ids="store.listSubflowIds()"
-        :current-subflow-id="store.currentSubflowId"
+        :current-subflow-id="currentSubflowIdVal"
         @add-node="store.addNode"
         @switch-main="store.switchToMain"
         @switch-subflow="store.switchToSubflow"
@@ -131,6 +146,13 @@
         @remove-node="store.removeNode"
         @create-subflow="store.addSubflow"
         @switch-to-subflow="store.switchToSubflow"
+      />
+      <EdgePropertyPanel
+        v-else-if="activeEdge"
+        class="floating-property"
+        :edge="activeEdge"
+        :nodes="store.nodes"
+        @remove-edge="store.removeEdge"
       />
 
       <div class="bottom-toolbar">
@@ -191,6 +213,28 @@
       </div>
     </div>
   </div>
+  <!-- Rename dialog -->
+  <div v-if="renameVisible" class="rr-modal">
+    <div class="rr-dialog small">
+      <div class="rr-header">
+        <div class="title">重命名工作流</div>
+        <button class="close" @click="renameVisible = false">✕</button>
+      </div>
+      <div class="rr-body">
+        <div class="row">
+          <label>名称</label>
+          <input v-model="renameName" placeholder="工作流名称" />
+        </div>
+        <div class="row">
+          <label>描述</label>
+          <textarea v-model="renameDesc" placeholder="可选描述"></textarea>
+        </div>
+      </div>
+      <div class="rr-footer">
+        <button class="primary" @click="applyRename">保存</button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script lang="ts" setup>
@@ -205,6 +249,7 @@ import { validateFlow } from '@/entrypoints/popup/components/builder/model/valid
 import Canvas from '@/entrypoints/popup/components/builder/components/Canvas.vue';
 import Sidebar from '@/entrypoints/popup/components/builder/components/Sidebar.vue';
 import PropertyPanel from '@/entrypoints/popup/components/builder/components/PropertyPanel.vue';
+import EdgePropertyPanel from '@/entrypoints/popup/components/builder/components/EdgePropertyPanel.vue';
 
 const title = ref('工作流编辑器');
 // theme state: persisted in localStorage and default to system preference
@@ -270,11 +315,16 @@ async function bootstrap() {
 
 // Builder helpers mostly ported from modal component
 const selectedId = computed<string | null>(() => (store.activeNodeId as any)?.value ?? null);
+const selectedEdgeId = computed<string | null>(() => (store.activeEdgeId as any)?.value ?? null);
 const activeNode = computed(() => store.nodes.find((n) => n.id === selectedId.value) || null);
+const activeEdge = computed(() => store.edges.find((e) => e.id === selectedEdgeId.value) || null);
 const validation = computed(() => validateFlow(store.nodes));
 
 const search = ref('');
 const focusNodeId = ref<string | null>(null);
+const currentSubflowIdVal = computed<string | null>(
+  () => (store.currentSubflowId as any)?.value ?? null,
+);
 const highlightField = ref<string | null>(null);
 const fitSeq = ref(0);
 function focusSearch() {
@@ -311,6 +361,21 @@ function onAddNodeAt(type: string, x: number, y: number) {
 }
 function fitAll() {
   fitSeq.value++;
+}
+
+// rename dialog
+const renameVisible = ref(false);
+const renameName = ref('');
+const renameDesc = ref('');
+function openRename() {
+  renameName.value = store.flowLocal.name || '';
+  renameDesc.value = (store.flowLocal as any).description || '';
+  renameVisible.value = true;
+}
+function applyRename() {
+  store.flowLocal.name = renameName.value.trim();
+  (store.flowLocal as any).description = renameDesc.value;
+  renameVisible.value = false;
 }
 
 function save() {
@@ -720,4 +785,83 @@ function focusNode(id: string) {
   color: var(--rr-text);
 }
 /* removed legacy error-panel styles */
+
+/* dialog styles (aligned with popup ScheduleDialog) */
+.rr-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 2147483646;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.rr-dialog {
+  background: #fff;
+  border-radius: 8px;
+  width: 520px;
+  max-width: 96vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+.rr-dialog.small {
+  width: 520px;
+}
+.rr-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+.rr-header .title {
+  font-weight: 600;
+}
+.rr-header .close {
+  border: none;
+  background: #f3f4f6;
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.rr-body {
+  padding: 12px 16px;
+  overflow: auto;
+}
+.rr-footer {
+  padding: 12px 16px;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.rr-footer .primary {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0;
+}
+.row > label {
+  width: 88px;
+  color: #374151;
+}
+.row > input,
+.row > textarea {
+  flex: 1;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.row > textarea {
+  min-height: 64px;
+}
 </style>

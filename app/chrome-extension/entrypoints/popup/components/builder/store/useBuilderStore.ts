@@ -20,6 +20,7 @@ export function useBuilderStore(initial?: FlowV2 | null) {
   const nodes = reactive<NodeBase[]>([]);
   const edges = reactive<EdgeV2[]>([]);
   const activeNodeId = ref<string | null>(null);
+  const activeEdgeId = ref<string | null>(null);
   const pendingFrom = ref<string | null>(null);
   const pendingLabel = ref<string>('default');
   const paletteTypes = [
@@ -117,6 +118,7 @@ export function useBuilderStore(initial?: FlowV2 | null) {
     );
     layoutIfNeeded();
     activeNodeId.value = nodes[0]?.id || null;
+    activeEdgeId.value = null;
     // reset history
     past.length = 0;
     future.length = 0;
@@ -130,6 +132,13 @@ export function useBuilderStore(initial?: FlowV2 | null) {
       pendingFrom.value = null;
     }
     activeNodeId.value = id || null;
+    // selecting a node should clear edge selection
+    if (id) activeEdgeId.value = null;
+  }
+
+  function selectEdge(id: string | null) {
+    activeEdgeId.value = id || null;
+    if (id) activeNodeId.value = null;
   }
 
   function addNode(t: NodeBase['type']) {
@@ -188,6 +197,15 @@ export function useBuilderStore(initial?: FlowV2 | null) {
     }
     // After removal, do not auto-select another node to avoid accidental batch deletes
     activeNodeId.value = null;
+    activeEdgeId.value = null;
+    recordChange();
+  }
+
+  function removeEdge(id: string) {
+    const idx = edges.findIndex((e) => e.id === id);
+    if (idx < 0) return;
+    edges.splice(idx, 1);
+    if (activeEdgeId.value === id) activeEdgeId.value = null;
     recordChange();
   }
 
@@ -221,6 +239,12 @@ export function useBuilderStore(initial?: FlowV2 | null) {
       return;
     edges.push({ id: newId('e'), from: sourceId, to: targetId, label });
     recordChange();
+    // auto select the newly created edge
+    try {
+      const last = edges[edges.length - 1];
+      activeEdgeId.value = last?.id || null;
+      activeNodeId.value = null;
+    } catch {}
   }
 
   function importFromSteps() {
@@ -323,6 +347,7 @@ export function useBuilderStore(initial?: FlowV2 | null) {
     nodes,
     edges,
     activeNodeId,
+    activeEdgeId,
     pendingFrom,
     pendingLabel,
     currentSubflowId,
@@ -331,9 +356,11 @@ export function useBuilderStore(initial?: FlowV2 | null) {
     redo,
     initFromFlow,
     selectNode,
+    selectEdge,
     addNode,
     duplicateNode,
     removeNode,
+    removeEdge,
     setNodePosition,
     addNodeAt,
     connectFrom,
