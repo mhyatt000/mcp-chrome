@@ -1,5 +1,5 @@
-import { STORAGE_KEYS } from '@/common/constants';
 import type { Flow, RunRecord } from './types';
+import { IndexedDbStorage } from './storage/indexeddb-manager';
 
 // design note: simple local storage backed store for flows and run records
 
@@ -12,36 +12,27 @@ export interface PublishedFlowInfo {
 }
 
 export async function listFlows(): Promise<Flow[]> {
-  const res = await chrome.storage.local.get([STORAGE_KEYS.RR_FLOWS]);
-  return (res[STORAGE_KEYS.RR_FLOWS] as Flow[]) || [];
+  return await IndexedDbStorage.flows.list();
 }
 
 export async function getFlow(flowId: string): Promise<Flow | undefined> {
-  const flows = await listFlows();
-  return flows.find((f) => f.id === flowId);
+  return await IndexedDbStorage.flows.get(flowId);
 }
 
 export async function saveFlow(flow: Flow): Promise<void> {
-  const flows = await listFlows();
-  const idx = flows.findIndex((f) => f.id === flow.id);
-  if (idx >= 0) flows[idx] = flow;
-  else flows.push(flow);
-  await chrome.storage.local.set({ [STORAGE_KEYS.RR_FLOWS]: flows });
+  await IndexedDbStorage.flows.save(flow);
 }
 
 export async function deleteFlow(flowId: string): Promise<void> {
-  const flows = await listFlows();
-  const filtered = flows.filter((f) => f.id !== flowId);
-  await chrome.storage.local.set({ [STORAGE_KEYS.RR_FLOWS]: filtered });
+  await IndexedDbStorage.flows.delete(flowId);
 }
 
 export async function listRuns(): Promise<RunRecord[]> {
-  const res = await chrome.storage.local.get([STORAGE_KEYS.RR_RUNS]);
-  return (res[STORAGE_KEYS.RR_RUNS] as RunRecord[]) || [];
+  return await IndexedDbStorage.runs.list();
 }
 
 export async function appendRun(record: RunRecord): Promise<void> {
-  const runs = await listRuns();
+  const runs = await IndexedDbStorage.runs.list();
   runs.push(record);
   // Trim to keep last 10 runs per flowId to avoid unbounded growth
   try {
@@ -52,21 +43,20 @@ export async function appendRun(record: RunRecord): Promise<void> {
       byFlow.set(r.flowId, list);
     }
     const merged: RunRecord[] = [];
-    for (const [fid, arr] of byFlow.entries()) {
-      // keep last 10 by startedAt chronological order
+    for (const [, arr] of byFlow.entries()) {
       arr.sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
       const last = arr.slice(Math.max(0, arr.length - 10));
       merged.push(...last);
     }
-    await chrome.storage.local.set({ [STORAGE_KEYS.RR_RUNS]: merged });
-  } catch {
-    await chrome.storage.local.set({ [STORAGE_KEYS.RR_RUNS]: runs });
+    await IndexedDbStorage.runs.replaceAll(merged);
+  } catch (e) {
+    console.warn('appendRun: trim failed, saving all', e);
+    await IndexedDbStorage.runs.replaceAll(runs);
   }
 }
 
 export async function listPublished(): Promise<PublishedFlowInfo[]> {
-  const res = await chrome.storage.local.get([STORAGE_KEYS.RR_PUBLISHED]);
-  return (res[STORAGE_KEYS.RR_PUBLISHED] as PublishedFlowInfo[]) || [];
+  return await IndexedDbStorage.published.list();
 }
 
 export async function publishFlow(flow: Flow, slug?: string): Promise<PublishedFlowInfo> {
@@ -77,18 +67,12 @@ export async function publishFlow(flow: Flow, slug?: string): Promise<PublishedF
     name: flow.name,
     description: flow.description,
   };
-  const list = await listPublished();
-  const idx = list.findIndex((p) => p.id === info.id);
-  if (idx >= 0) list[idx] = info;
-  else list.push(info);
-  await chrome.storage.local.set({ [STORAGE_KEYS.RR_PUBLISHED]: list });
+  await IndexedDbStorage.published.save(info);
   return info;
 }
 
 export async function unpublishFlow(flowId: string): Promise<void> {
-  const list = await listPublished();
-  const filtered = list.filter((p) => p.id !== flowId);
-  await chrome.storage.local.set({ [STORAGE_KEYS.RR_PUBLISHED]: filtered });
+  await IndexedDbStorage.published.delete(flowId);
 }
 
 export function toSlug(name: string): string {
@@ -141,20 +125,13 @@ export interface FlowSchedule {
 }
 
 export async function listSchedules(): Promise<FlowSchedule[]> {
-  const res = await chrome.storage.local.get([STORAGE_KEYS.RR_SCHEDULES]);
-  return (res[STORAGE_KEYS.RR_SCHEDULES] as FlowSchedule[]) || [];
+  return await IndexedDbStorage.schedules.list();
 }
 
 export async function saveSchedule(s: FlowSchedule): Promise<void> {
-  const list = await listSchedules();
-  const idx = list.findIndex((x) => x.id === s.id);
-  if (idx >= 0) list[idx] = s;
-  else list.push(s);
-  await chrome.storage.local.set({ [STORAGE_KEYS.RR_SCHEDULES]: list });
+  await IndexedDbStorage.schedules.save(s);
 }
 
 export async function removeSchedule(scheduleId: string): Promise<void> {
-  const list = await listSchedules();
-  const filtered = list.filter((s) => s.id !== scheduleId);
-  await chrome.storage.local.set({ [STORAGE_KEYS.RR_SCHEDULES]: filtered });
+  await IndexedDbStorage.schedules.delete(scheduleId);
 }

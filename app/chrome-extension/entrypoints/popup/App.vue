@@ -358,7 +358,6 @@ function isFlowBoundToCurrent(flow: any) {
 }
 
 // 运行记录与覆盖项在侧边栏页面查看
-
 const startRecording = async () => {
   if (rrRecording.value) return;
   try {

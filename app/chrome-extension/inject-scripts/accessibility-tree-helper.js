@@ -265,6 +265,41 @@
     );
   }
 
+  // Utility: query CSS across open shadow roots (best-effort)
+  function querySelectorDeepFirst(selector) {
+    try {
+      // Fast path
+      const direct = document.querySelector(selector);
+      if (direct) return direct;
+    } catch (_) {}
+    const visited = new Set();
+    const stack = [document.documentElement];
+    while (stack.length) {
+      const node = stack.pop();
+      if (!node || visited.has(node)) continue;
+      visited.add(node);
+      try {
+        const root = /** @type {any} */ (node).shadowRoot || (node.nodeType === 9 ? node : null);
+        if (root) {
+          try {
+            const hit = root.querySelector(selector);
+            if (hit) return hit;
+          } catch (_) {}
+        }
+      } catch (_) {}
+      // Traverse DOM and shadow roots
+      try {
+        const children = /** @type {Element} */ (node).children || [];
+        for (let i = 0; i < children.length; i++) stack.push(children[i]);
+        const sr = /** @type {any} */ (node).shadowRoot;
+        if (sr && sr.children) {
+          for (let i = 0; i < sr.children.length; i++) stack.push(sr.children[i]);
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
   /**
    * Whether to include element in tree under config
    * @param {Element} el
@@ -750,6 +785,10 @@
           const useText = !!request.useText;
           const textQuery = String(request.text || '').trim();
           const sel = String(request.selector || '').trim();
+          const isXPath = !!request.isXPath;
+          const limitTag = String(request.tagName || '')
+            .trim()
+            .toUpperCase();
           let el = null;
           if (useText && textQuery) {
             const normalize = (s) =>
@@ -781,38 +820,75 @@
               return (2 * inter) / (A.length + B.length);
             };
             let best = { el: null, score: 0 };
-            const walker = document.createTreeWalker(
-              document.body || document.documentElement,
-              NodeFilter.SHOW_ELEMENT,
-            );
+            // Deep traversal including shadow roots
+            const stack = [document.documentElement];
             let visited = 0;
-            while (walker.nextNode()) {
-              const node = /** @type {Element} */ (walker.currentNode);
+            while (stack.length) {
+              const node = /** @type {any} */ (stack.pop());
+              if (!node || !(node instanceof Element)) continue;
               try {
-                const cs = window.getComputedStyle(node);
-                if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0')
-                  continue;
-                const rect = /** @type {HTMLElement} */ (node).getBoundingClientRect();
-                if (rect.width <= 0 || rect.height <= 0) continue;
-                const txt = normalize(node.textContent || '');
-                if (!txt) continue;
-                // quick path: substring contains
-                if (txt.includes(query)) {
-                  el = node;
-                  break;
+                if (limitTag && String(node.tagName || '').toUpperCase() !== limitTag) {
+                  // still traverse into children/shadow for performance? yes
+                } else {
+                  const cs = window.getComputedStyle(node);
+                  if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') {
+                    /* skip hidden */
+                  } else {
+                    const rect = /** @type {HTMLElement} */ (node).getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0) {
+                      const txt = normalize(node.textContent || '');
+                      if (txt) {
+                        if (txt.includes(query)) {
+                          el = /** @type {Element} */ (node);
+                          break;
+                        }
+                        const sc = dice(txt, query);
+                        if (sc > best.score)
+                          best = { el: /** @type {Element} */ (node), score: sc };
+                      }
+                    }
+                  }
                 }
-                const sc = dice(txt, query);
-                if (sc > best.score) best = { el: node, score: sc };
               } catch {}
-              if (++visited > 5000) break;
+              // push children and shadow children
+              try {
+                const children = node.children || [];
+                for (let i = 0; i < children.length; i++) stack.push(children[i]);
+              } catch {}
+              try {
+                const sr = node.shadowRoot;
+                if (sr && sr.children) {
+                  for (let i = 0; i < sr.children.length; i++) stack.push(sr.children[i]);
+                }
+              } catch {}
+              if (++visited > 8000) break;
             }
             if (!el && best.el && best.score >= 0.6) el = best.el;
+          } else if (isXPath) {
+            if (!sel) {
+              sendResponse({ success: false, error: 'selector is required' });
+              return true;
+            }
+            try {
+              const doc = document;
+              const xpathResult = doc.evaluate(
+                sel,
+                doc,
+                null,
+                XPathResult.FIRST_ORDERED_NODE_TYPE,
+                null,
+              );
+              el = /** @type {Element|null} */ (xpathResult.singleNodeValue);
+            } catch (e) {
+              // fall back to null
+              el = null;
+            }
           } else {
             if (!sel) {
               sendResponse({ success: false, error: 'selector is required' });
               return true;
             }
-            el = document.querySelector(sel);
+            el = document.querySelector(sel) || querySelectorDeepFirst(sel);
           }
           if (!el) {
             sendResponse({ success: false, error: `selector not found: ${sel}` });
@@ -852,7 +928,7 @@
             sendResponse({ success: false, error: 'selector and name are required' });
             return true;
           }
-          const el = document.querySelector(sel);
+          const el = document.querySelector(sel) || querySelectorDeepFirst(sel);
           if (!el) {
             sendResponse({ success: false, error: `selector not found: ${sel}` });
             return true;

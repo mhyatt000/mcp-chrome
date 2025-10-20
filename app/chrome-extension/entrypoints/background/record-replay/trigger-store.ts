@@ -1,4 +1,4 @@
-import { STORAGE_KEYS } from '@/common/constants';
+import { IndexedDbStorage } from './storage/indexeddb-manager';
 
 export type TriggerType = 'url' | 'contextMenu' | 'command' | 'dom';
 
@@ -37,23 +37,15 @@ export interface DomTrigger extends BaseTrigger {
 export type FlowTrigger = UrlTrigger | ContextMenuTrigger | CommandTrigger | DomTrigger;
 
 export async function listTriggers(): Promise<FlowTrigger[]> {
-  const res = await chrome.storage.local.get([STORAGE_KEYS.RR_TRIGGERS]);
-  const arr = (res[STORAGE_KEYS.RR_TRIGGERS] as FlowTrigger[]) || [];
-  return arr;
+  return await IndexedDbStorage.triggers.list();
 }
 
 export async function saveTrigger(t: FlowTrigger): Promise<void> {
-  const arr = await listTriggers();
-  const idx = arr.findIndex((x) => x.id === t.id);
-  if (idx >= 0) arr[idx] = t;
-  else arr.push(t);
-  await chrome.storage.local.set({ [STORAGE_KEYS.RR_TRIGGERS]: arr });
+  await IndexedDbStorage.triggers.save(t);
 }
 
 export async function deleteTrigger(id: string): Promise<void> {
-  const arr = await listTriggers();
-  const filtered = arr.filter((x) => x.id !== id);
-  await chrome.storage.local.set({ [STORAGE_KEYS.RR_TRIGGERS]: filtered });
+  await IndexedDbStorage.triggers.delete(id);
 }
 
 export function toId(prefix = 'trg') {

@@ -1,4 +1,6 @@
 // design note: comments in English
+import { STEP_TYPES } from '@/common/step-types';
+import { NODE_TYPES } from '@/common/node-types';
 
 export type SelectorType = 'css' | 'xpath' | 'attr' | 'aria' | 'text';
 
@@ -13,32 +15,7 @@ export interface TargetLocator {
   candidates: SelectorCandidate[]; // ordered by priority
 }
 
-export type StepType =
-  | 'click'
-  | 'dblclick'
-  | 'fill'
-  | 'triggerEvent'
-  | 'setAttribute'
-  | 'screenshot'
-  | 'switchFrame'
-  | 'loopElements'
-  | 'key'
-  | 'scroll'
-  | 'drag'
-  | 'wait'
-  | 'assert'
-  | 'script'
-  | 'if'
-  | 'foreach'
-  | 'while'
-  | 'navigate'
-  | 'http'
-  | 'extract'
-  | 'openTab'
-  | 'switchTab'
-  | 'closeTab'
-  | 'handleDownload'
-  | 'executeFlow';
+export type StepType = (typeof STEP_TYPES)[keyof typeof STEP_TYPES];
 
 export interface StepBase {
   id: string;
@@ -251,32 +228,7 @@ export interface VariableDef {
   rules?: { required?: boolean; pattern?: string; enum?: string[] };
 }
 
-export type NodeType =
-  | 'click'
-  | 'dblclick'
-  | 'fill'
-  | 'triggerEvent'
-  | 'setAttribute'
-  | 'screenshot'
-  | 'switchFrame'
-  | 'loopElements'
-  | 'key'
-  | 'wait'
-  | 'assert'
-  | 'script'
-  | 'if'
-  | 'foreach'
-  | 'while'
-  | 'navigate'
-  | 'openTab'
-  | 'switchTab'
-  | 'closeTab'
-  | 'handleDownload'
-  | 'executeFlow'
-  | 'http'
-  | 'extract'
-  | 'trigger'
-  | 'delay';
+export type NodeType = (typeof NODE_TYPES)[keyof typeof NODE_TYPES];
 
 export interface NodeBase {
   id: string;

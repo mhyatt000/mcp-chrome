@@ -344,7 +344,7 @@ const registry: Partial<Record<Step['type'], NodeRuntime<any>>> = {
       return ok ? { ok } : { ok, errors: ['缺少目标选择器候选或输入值'] };
     },
     run: async (ctx, step: StepFill) => {
-      const s = step as StepFill;
+      const s = step as any;
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
       const firstTab = tabs && tabs[0];
       const tabId = firstTab && typeof firstTab.id === 'number' ? firstTab.id : undefined;
@@ -354,9 +354,12 @@ const registry: Partial<Record<Step['type'], NodeRuntime<any>>> = {
       const first = s.target?.candidates?.[0]?.type;
       const resolvedBy = (located as any)?.resolvedBy || ((located as any)?.ref ? 'ref' : '');
       const fallbackUsed = resolvedBy && first && resolvedBy !== 'ref' && resolvedBy !== first;
-      const value = (s.value || '').replace(/\{([^}]+)\}/g, (_m, k) =>
-        (ctx.vars[k] ?? '').toString(),
-      );
+      // Interpolate only when string; allow boolean/number for checkbox/range/number
+      const interpolate = (v: any) =>
+        typeof v === 'string'
+          ? v.replace(/\{([^}]+)\}/g, (_m, k) => (ctx.vars[k] ?? '').toString())
+          : v;
+      const value = interpolate(s.value);
       if ((located as any)?.ref) {
         const resolved = await chrome.tabs.sendMessage(
           tabId,
@@ -386,7 +389,7 @@ const registry: Partial<Record<Step['type'], NodeRuntime<any>>> = {
           if (typeName === 'file') {
             const uploadRes = await handleCallTool({
               name: TOOL_NAMES.BROWSER.FILE_UPLOAD,
-              args: { selector: cssSelector, filePath: value },
+              args: { selector: cssSelector, filePath: String(value ?? '') },
             });
             if ((uploadRes as any).isError) throw new Error('file upload failed');
             if (fallbackUsed)

@@ -277,12 +277,13 @@ export async function runFlow(flow: Flow, options: RunOptions = {}): Promise<Run
         try {
           const beforeInfo = await getActiveTabInfo();
           const result = await executeStep(ctx, step);
-          if ((step.type === 'click' || step.type === 'dblclick') && (step as any).after) {
-            const after = (step as any).after as any;
+          if (step.type === 'click' || step.type === 'dblclick') {
+            const after = ((step as any).after || {}) as any;
             if (after.waitForNavigation)
               await waitForNavigationDone(beforeInfo.url, (step as any).timeoutMs);
             else if (after.waitForNetworkIdle)
               await waitForNetworkIdle(Math.min((step as any).timeoutMs || 5000, 120000), 1200);
+            else await maybeQuickWaitForNav(beforeInfo.url, (step as any).timeoutMs);
           }
           if (step.type === 'navigate' || step.type === 'openTab') {
             await waitForNavigationDone(beforeInfo.url, (step as any).timeoutMs);
@@ -343,6 +344,79 @@ export async function runFlow(flow: Flow, options: RunOptions = {}): Promise<Run
     } catch {}
   };
 
+  // Opportunistic short-window navigation wait after clicks when not explicitly requested
+  const maybeQuickWaitForNav = async (prevUrl: string, timeoutMs?: number) => {
+    try {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      const tabId = tabs?.[0]?.id;
+      if (typeof tabId !== 'number') return;
+      const sniffMs = 350;
+      const startedAt = Date.now();
+      let seen = false;
+      await new Promise<void>((resolve) => {
+        let timer: any = null;
+        const cleanup = () => {
+          try {
+            chrome.webNavigation.onCommitted.removeListener(onCommitted);
+          } catch {}
+          try {
+            chrome.webNavigation.onCompleted.removeListener(onCompleted);
+          } catch {}
+          try {
+            (chrome.webNavigation as any).onHistoryStateUpdated?.removeListener?.(
+              onHistoryStateUpdated,
+            );
+          } catch {}
+          try {
+            chrome.tabs.onUpdated.removeListener(onUpdated);
+          } catch {}
+          if (timer) {
+            try {
+              clearTimeout(timer);
+            } catch {}
+          }
+        };
+        const finish = async () => {
+          cleanup();
+          if (seen) {
+            try {
+              await waitForNavigation(
+                prevUrl ? Math.min(timeoutMs || 15000, 30000) : undefined,
+                prevUrl,
+              );
+            } catch {}
+          }
+          resolve();
+        };
+        const mark = () => {
+          seen = true;
+        };
+        const onCommitted = (d: any) => {
+          if (d.tabId === tabId && d.frameId === 0 && d.timeStamp >= startedAt) mark();
+        };
+        const onCompleted = (d: any) => {
+          if (d.tabId === tabId && d.frameId === 0 && d.timeStamp >= startedAt) mark();
+        };
+        const onHistoryStateUpdated = (d: any) => {
+          if (d.tabId === tabId && d.frameId === 0 && d.timeStamp >= startedAt) mark();
+        };
+        const onUpdated = (updatedId: number, change: chrome.tabs.TabChangeInfo) => {
+          if (updatedId !== tabId) return;
+          if (change.status === 'loading') mark();
+          if (typeof change.url === 'string' && (!prevUrl || change.url !== prevUrl)) mark();
+        };
+
+        chrome.webNavigation.onCommitted.addListener(onCommitted);
+        chrome.webNavigation.onCompleted.addListener(onCompleted);
+        try {
+          (chrome.webNavigation as any).onHistoryStateUpdated?.addListener?.(onHistoryStateUpdated);
+        } catch {}
+        chrome.tabs.onUpdated.addListener(onUpdated);
+        timer = setTimeout(finish, sniffMs);
+      });
+    } catch {}
+  };
+
   try {
     if (!hasDag) {
       // Linear execution (legacy steps)
@@ -371,13 +445,14 @@ export async function runFlow(flow: Flow, options: RunOptions = {}): Promise<Run
               break;
             }
             const result = await executeStep(ctx, step);
-            // handle click/dblclick after.waitForNavigation / waitForNetworkIdle
-            if ((step.type === 'click' || step.type === 'dblclick') && (step as any).after) {
-              const after = (step as any).after as any;
+            // handle click/dblclick navigation/network-idle waits
+            if (step.type === 'click' || step.type === 'dblclick') {
+              const after = ((step as any).after || {}) as any;
               if (after.waitForNavigation)
                 await waitForNavigationDone(beforeInfo.url, (step as any).timeoutMs);
               else if (after.waitForNetworkIdle)
                 await waitForNetworkIdle(Math.min((step as any).timeoutMs || 5000, 120000), 1200);
+              else await maybeQuickWaitForNav(beforeInfo.url, (step as any).timeoutMs);
             }
             if (step.type === 'navigate' || step.type === 'openTab') {
               await waitForNavigationDone(beforeInfo.url, (step as any).timeoutMs);
@@ -509,12 +584,13 @@ export async function runFlow(flow: Flow, options: RunOptions = {}): Promise<Run
         let jumpedOnError = false;
         try {
           const result = await executeStep(ctx, step);
-          if ((step.type === 'click' || step.type === 'dblclick') && (step as any).after) {
-            const after = (step as any).after as any;
+          if (step.type === 'click' || step.type === 'dblclick') {
+            const after = ((step as any).after || {}) as any;
             if (after.waitForNavigation)
               await waitForNavigationDone(beforeInfo.url, (step as any).timeoutMs);
             else if (after.waitForNetworkIdle)
               await waitForNetworkIdle(Math.min((step as any).timeoutMs || 5000, 120000), 1200);
+            else await maybeQuickWaitForNav(beforeInfo.url, (step as any).timeoutMs);
           }
           if (step.type === 'navigate' || step.type === 'openTab') {
             await waitForNavigationDone(beforeInfo.url, (step as any).timeoutMs);

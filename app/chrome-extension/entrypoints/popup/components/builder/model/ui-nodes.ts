@@ -3,6 +3,7 @@
 
 import type { Component } from 'vue';
 import type { NodeBase, NodeType } from '@/entrypoints/background/record-replay/types';
+import { NODE_TYPES } from '@/common/node-types';
 import { defaultConfigFor as fallbackDefaultConfig } from '@/entrypoints/popup/components/builder/model/transforms';
 import { validateNode as fallbackValidateNode } from '@/entrypoints/popup/components/builder/model/validation';
 
@@ -89,7 +90,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
     }),
   },
   {
-    type: 'navigate',
+    type: NODE_TYPES.NAVIGATE,
     label: '导航',
     category: 'Actions',
     iconClass: 'icon-navigate',
@@ -97,7 +98,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
     property: PropNavigate,
   },
   {
-    type: 'click',
+    type: NODE_TYPES.CLICK,
     label: '点击',
     category: 'Actions',
     iconClass: 'icon-click',
@@ -105,7 +106,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
     property: PropClick,
   },
   {
-    type: 'drag',
+    type: NODE_TYPES.DRAG,
     label: '拖拽',
     category: 'Actions',
     iconClass: 'icon-drag',
@@ -113,7 +114,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
     property: PropDrag,
   },
   {
-    type: 'scroll',
+    type: NODE_TYPES.SCROLL,
     label: '滚动',
     category: 'Actions',
     iconClass: 'icon-scroll',
@@ -121,7 +122,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
     property: PropScroll,
   },
   {
-    type: 'dblclick',
+    type: NODE_TYPES.DBLCLICK,
     label: '双击',
     category: 'Actions',
     iconClass: 'icon-click',
@@ -129,7 +130,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
     property: PropClick,
   },
   {
-    type: 'fill',
+    type: NODE_TYPES.FILL,
     label: '填充',
     category: 'Actions',
     iconClass: 'icon-fill',
@@ -137,7 +138,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
     property: PropFill,
   },
   {
-    type: 'key',
+    type: NODE_TYPES.KEY,
     label: '键盘',
     category: 'Actions',
     iconClass: 'icon-key',
@@ -145,7 +146,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
     property: PropKey,
   },
   {
-    type: 'wait',
+    type: NODE_TYPES.WAIT,
     label: '等待',
     category: 'Actions',
     iconClass: 'icon-wait',
@@ -153,7 +154,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
     property: PropWait,
   },
   {
-    type: 'assert',
+    type: NODE_TYPES.ASSERT,
     label: '断言',
     category: 'Actions',
     iconClass: 'icon-assert',
@@ -170,7 +171,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
   },
 
   {
-    type: 'if',
+    type: NODE_TYPES.IF,
     label: '条件',
     category: 'Logic',
     iconClass: 'icon-if',
@@ -178,7 +179,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
     property: PropIf,
   },
   {
-    type: 'foreach',
+    type: NODE_TYPES.FOREACH,
     label: '循环',
     category: 'Logic',
     iconClass: 'icon-foreach',
@@ -186,7 +187,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
     property: PropForeach,
   },
   {
-    type: 'while',
+    type: NODE_TYPES.WHILE,
     label: '循环',
     category: 'Logic',
     iconClass: 'icon-while',
@@ -195,7 +196,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
   },
 
   {
-    type: 'http',
+    type: NODE_TYPES.HTTP,
     label: 'HTTP',
     category: 'Tools',
     iconClass: 'icon-http',
@@ -203,7 +204,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
     property: PropHttp,
   },
   {
-    type: 'extract',
+    type: NODE_TYPES.EXTRACT,
     label: '提取',
     category: 'Tools',
     iconClass: 'icon-extract',
@@ -211,7 +212,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
     property: PropExtract,
   },
   {
-    type: 'screenshot',
+    type: NODE_TYPES.SCREENSHOT,
     label: '截图',
     category: 'Tools',
     iconClass: 'icon-screenshot',
@@ -219,7 +220,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
     property: PropScreenshot,
   },
   {
-    type: 'triggerEvent',
+    type: NODE_TYPES.TRIGGER_EVENT,
     label: '触发事件',
     category: 'Tools',
     iconClass: 'icon-trigger',
@@ -227,7 +228,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
     property: PropTriggerEvent,
   },
   {
-    type: 'setAttribute',
+    type: NODE_TYPES.SET_ATTRIBUTE,
     label: '设置属性',
     category: 'Tools',
     iconClass: 'icon-attr',
@@ -235,7 +236,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
     property: PropSetAttribute,
   },
   {
-    type: 'loopElements',
+    type: NODE_TYPES.LOOP_ELEMENTS,
     label: '循环元素',
     category: 'Tools',
     iconClass: 'icon-loop',
@@ -243,7 +244,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
     property: PropLoopElements,
   },
   {
-    type: 'switchFrame',
+    type: NODE_TYPES.SWITCH_FRAME,
     label: '切换Frame',
     category: 'Tools',
     iconClass: 'icon-frame',
@@ -251,7 +252,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
     property: PropSwitchFrame,
   },
   {
-    type: 'handleDownload',
+    type: NODE_TYPES.HANDLE_DOWNLOAD,
     label: '下载处理',
     category: 'Tools',
     iconClass: 'icon-download',
@@ -259,7 +260,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
     property: PropHandleDownload,
   },
   {
-    type: 'script',
+    type: NODE_TYPES.SCRIPT,
     label: '脚本',
     category: 'Tools',
     iconClass: 'icon-script',
@@ -268,7 +269,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
   },
 
   {
-    type: 'openTab',
+    type: NODE_TYPES.OPEN_TAB,
     label: '打开标签',
     category: 'Tabs',
     iconClass: 'icon-openTab',
@@ -276,7 +277,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
     property: PropOpenTab,
   },
   {
-    type: 'switchTab',
+    type: NODE_TYPES.SWITCH_TAB,
     label: '切换标签',
     category: 'Tabs',
     iconClass: 'icon-switchTab',
@@ -284,7 +285,7 @@ export const NODE_UI_LIST: NodeUIConfig[] = [
     property: PropSwitchTab,
   },
   {
-    type: 'closeTab',
+    type: NODE_TYPES.CLOSE_TAB,
     label: '关闭标签',
     category: 'Tabs',
     iconClass: 'icon-closeTab',

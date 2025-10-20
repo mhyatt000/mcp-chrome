@@ -17,9 +17,23 @@ export async function locateElement(
   target: TargetLocator,
   frameId?: number,
 ): Promise<LocatedElement | null> {
-  // Prefer stable selectors (css/attr/aria/text/xpath); only use ref as a last resort.
-  // Rationale: ref is ephemeral across navigations/renders and should not be prioritized in replay.
-  for (const c of target.candidates || []) {
+  // 0) Fast path: try primary selector if provided
+  const primarySel = (target as any)?.selector ? String((target as any).selector).trim() : '';
+  if (primarySel) {
+    try {
+      const ensured = await chrome.tabs.sendMessage(
+        tabId,
+        { action: TOOL_MESSAGE_TYPES.ENSURE_REF_FOR_SELECTOR, selector: primarySel } as any,
+        { frameId } as any,
+      );
+      if (ensured && ensured.success && ensured.ref && ensured.center)
+        return { ref: ensured.ref, center: ensured.center, resolvedBy: 'css' };
+    } catch {}
+  }
+
+  // 1) Non-text candidates first for stability (css/attr/aria/xpath)
+  const nonText = (target.candidates || []).filter((c) => c.type !== 'text');
+  for (const c of nonText) {
     try {
       if (c.type === 'css' || c.type === 'attr') {
         const ensured = await chrome.tabs.sendMessage(
@@ -27,20 +41,6 @@ export async function locateElement(
           {
             action: TOOL_MESSAGE_TYPES.ENSURE_REF_FOR_SELECTOR,
             selector: c.value,
-          } as any,
-          { frameId } as any,
-        );
-        if (ensured && ensured.success && ensured.ref && ensured.center) {
-          return { ref: ensured.ref, center: ensured.center, resolvedBy: c.type };
-        }
-      } else if (c.type === 'text') {
-        // Search by visible innerText contains value
-        const ensured = await chrome.tabs.sendMessage(
-          tabId,
-          {
-            action: TOOL_MESSAGE_TYPES.ENSURE_REF_FOR_SELECTOR,
-            useText: true,
-            text: c.value,
           } as any,
           { frameId } as any,
         );
@@ -108,6 +108,26 @@ export async function locateElement(
     } catch (e) {
       // continue to next candidate
     }
+  }
+  // 2) Human-intent fallback: text-based search as last resort
+  const textCands = (target.candidates || []).filter((c) => c.type === 'text');
+  const tagName = ((target as any)?.tag || '').toString();
+  for (const c of textCands) {
+    try {
+      const ensured = await chrome.tabs.sendMessage(
+        tabId,
+        {
+          action: TOOL_MESSAGE_TYPES.ENSURE_REF_FOR_SELECTOR,
+          useText: true,
+          text: c.value,
+          tagName,
+        } as any,
+        { frameId } as any,
+      );
+      if (ensured && ensured.success && ensured.ref && ensured.center) {
+        return { ref: ensured.ref, center: ensured.center, resolvedBy: c.type };
+      }
+    } catch {}
   }
   // Fallback: try ref (works when ref was produced in the same page lifecycle)
   if (target.ref) {
