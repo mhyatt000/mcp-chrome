@@ -187,41 +187,39 @@
         </div>`;
       document.documentElement.appendChild(root);
       // Build timeline container just below the panel
-      try {
-        const timeline = document.createElement('div');
-        timeline.id = '__rr_rec_timeline';
-        Object.assign(timeline.style, {
-          marginTop: '8px',
-          width: '360px',
-          maxHeight: '220px',
-          overflow: 'auto',
-          background: 'rgba(17,24,39,0.85)',
-          color: '#F9FAFB',
-          border: '1px solid rgba(255,255,255,0.2)',
-          borderRadius: '8px',
-          boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
-          padding: '8px 10px',
-          fontSize: '12px',
-          lineHeight: '1.4',
-        });
-        const header = document.createElement('div');
-        header.textContent = '已录制步骤';
-        header.style.opacity = '0.8';
-        header.style.marginBottom = '4px';
-        const list = document.createElement('ol');
-        list.id = '__rr_rec_timeline_list';
-        list.style.listStyle = 'none';
-        list.style.margin = '0';
-        list.style.padding = '0';
-        list.style.display = 'flex';
-        list.style.flexDirection = 'column';
-        list.style.gap = '4px';
-        timeline.appendChild(header);
-        timeline.appendChild(list);
-        root.appendChild(timeline);
-        this._timeline = list;
-        this._timelineBox = timeline;
-      } catch {}
+      const timeline = document.createElement('div');
+      timeline.id = '__rr_rec_timeline';
+      Object.assign(timeline.style, {
+        marginTop: '8px',
+        width: '360px',
+        maxHeight: '220px',
+        overflow: 'auto',
+        background: 'rgba(17,24,39,0.85)',
+        color: '#F9FAFB',
+        border: '1px solid rgba(255,255,255,0.2)',
+        borderRadius: '8px',
+        boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+        padding: '8px 10px',
+        fontSize: '12px',
+        lineHeight: '1.4',
+      });
+      const header = document.createElement('div');
+      header.textContent = '已录制步骤';
+      header.style.opacity = '0.8';
+      header.style.marginBottom = '4px';
+      const list = document.createElement('ol');
+      list.id = '__rr_rec_timeline_list';
+      list.style.listStyle = 'none';
+      list.style.margin = '0';
+      list.style.padding = '0';
+      list.style.display = 'flex';
+      list.style.flexDirection = 'column';
+      list.style.gap = '4px';
+      timeline.appendChild(header);
+      timeline.appendChild(list);
+      root.appendChild(timeline);
+      this._timeline = list;
+      this._timelineBox = timeline;
       const btnPause = root.querySelector('#__rr_pause');
       const btnStop = root.querySelector('#__rr_stop');
       const hideChk = root.querySelector('#__rr_hide_values');
@@ -247,10 +245,7 @@
         else rec.resume();
       });
       btnStop.addEventListener('click', () => {
-        try {
-          chrome.runtime.sendMessage({ type: 'rr_stop_recording' });
-        } catch {}
-        rec.stop();
+        chrome.runtime.sendMessage({ type: 'rr_stop_recording' });
       });
       this._box = document.createElement('div');
       Object.assign(this._box.style, {
@@ -266,15 +261,13 @@
       this.updateStatus();
     }
     remove() {
-      try {
-        if (window === window.top) {
-          const root = document.getElementById('__rr_rec_overlay');
-          if (root) root.remove();
-          if (this._box) this._box.remove();
-          this._timeline = null;
-          this._timelineBox = null;
-        }
-      } catch {}
+      if (window === window.top) {
+        const root = document.getElementById('__rr_rec_overlay');
+        if (root) root.remove();
+        if (this._box) this._box.remove();
+        this._timeline = null;
+        this._timelineBox = null;
+      }
     }
     updateStatus() {
       const badge = document.getElementById('__rr_badge');
@@ -402,15 +395,11 @@
       this.isRecording = false;
       this._detach();
       this.ui.remove();
-      try {
-        if (this.scrollTimer) clearTimeout(this.scrollTimer);
-      } catch {}
+      if (this.scrollTimer) clearTimeout(this.scrollTimer);
       this.scrollTimer = null;
       this.lastFill = { step: null, ts: 0 };
       const ret = this.pendingFlow;
-      try {
-        this.pendingFlow.steps = [];
-      } catch {}
+      this.pendingFlow.steps = [];
       this._send({ kind: 'stop', flow: ret });
       return ret;
     }
@@ -444,21 +433,15 @@
       document.removeEventListener('input', this._onInput, true);
       document.removeEventListener('change', this._onChange, true);
       document.removeEventListener('scroll', this._onScroll, true);
-      try {
-        document.removeEventListener('mousemove', this._onMouseMove, true);
-      } catch {}
+      document.removeEventListener('mousemove', this._onMouseMove, true);
     }
 
     _updateHoverListener() {
-      try {
-        if (window !== window.top) return;
-        try {
-          document.removeEventListener('mousemove', this._onMouseMove, true);
-        } catch {}
-        if (this.isRecording && !this.isPaused && this.highlightEnabled) {
-          document.addEventListener('mousemove', this._onMouseMove, true);
-        }
-      } catch {}
+      if (window !== window.top) return;
+      document.removeEventListener('mousemove', this._onMouseMove, true);
+      if (this.isRecording && !this.isPaused && this.highlightEnabled) {
+        document.addEventListener('mousemove', this._onMouseMove, true);
+      }
     }
 
     // Flow helpers
@@ -501,9 +484,7 @@
       this.pendingFlow.meta.updatedAt = new Date().toISOString();
       this.batch.push(step);
       if (this.batchTimer) {
-        try {
-          clearTimeout(this.batchTimer);
-        } catch {}
+        clearTimeout(this.batchTimer);
       }
       this.batchTimer = setTimeout(() => {
         this.batchTimer = null;
@@ -523,9 +504,7 @@
     }
 
     _send(payload) {
-      try {
-        chrome.runtime.sendMessage({ type: 'rr_recorder_event', payload });
-      } catch {}
+      chrome.runtime.sendMessage({ type: 'rr_recorder_event', payload });
     }
 
     _addVariable(key, sensitive, defVal) {
@@ -793,13 +772,19 @@
       if (!request || !request.action) return false;
       if (request.action === 'rr_timeline_update') {
         const rec = getRecorder();
-        rec.ui.ensure();
-        if (rec.isRecording && rec.pendingFlow && (!rec.ui._timeline || rec.ui._count === 0)) {
-          // no-op; rely purely on updates per design
+        // Only respond to timeline updates when recording is active
+        if (!rec.isRecording) {
+          try {
+            sendResponse({ ok: true, ignored: true });
+          } catch {}
+          return true;
         }
+        // UI should already exist from start/resume; avoid creating overlay here
         const steps = Array.isArray(request.steps) ? request.steps : [];
         for (const st of steps) rec.ui.appendStep(st);
-        sendResponse({ ok: true });
+        try {
+          sendResponse({ ok: true });
+        } catch {}
         return true;
       }
       if (request.action === 'rr_recorder_control') {
@@ -833,9 +818,7 @@
         return false;
       }
     } catch (e) {
-      try {
-        sendResponse({ success: false, error: String(e && e.message ? e.message : e) });
-      } catch {}
+      sendResponse({ success: false, error: String(e && e.message ? e.message : e) });
       return true;
     }
     return false;
