@@ -263,7 +263,6 @@ const registry: Partial<Record<Step['type'], NodeRuntime<any>>> = {
       const s: any = expandTemplatesDeep(step as any, ctx.vars);
       const located = await locateElement(tabId, s.target, ctx.frameId);
       const frameId = (located as any)?.frameId ?? ctx.frameId;
-      const frameId = (located as any)?.frameId ?? ctx.frameId;
       const first = s.target?.candidates?.[0]?.type;
       const resolvedBy = (located as any)?.resolvedBy || ((located as any)?.ref ? 'ref' : '');
       const fallbackUsed = resolvedBy && first && resolvedBy !== 'ref' && resolvedBy !== first;

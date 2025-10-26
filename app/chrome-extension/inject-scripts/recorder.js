@@ -257,7 +257,8 @@
         zIndex: 2147483645,
       });
       document.documentElement.appendChild(this._box);
-      if (rec.highlightEnabled) document.addEventListener('mousemove', rec._onMouseMove, true);
+      if (rec.highlightEnabled)
+        document.addEventListener('mousemove', rec._onMouseMove, { capture: true, passive: true });
       this.updateStatus();
     }
     remove() {
@@ -304,6 +305,30 @@
       }
       const container = list.parentElement;
       if (container) container.scrollTop = container.scrollHeight;
+    }
+
+    // Efficiently apply a full timeline update by only appending the delta
+    applyTimelineUpdate(steps) {
+      try {
+        if (window !== window.top) return;
+        const list = Array.isArray(steps) ? steps : [];
+        const total = list.length;
+        // Ensure UI exists
+        if (!this._timeline) this.ensure();
+        if (!this._timeline) return;
+        if (total === 0) {
+          this.resetTimeline();
+          return;
+        }
+        // If timeline shrank (e.g., new session), rebuild from tail window
+        if (total < this._count) {
+          this.resetTimeline();
+        }
+        const startIdx = Math.max(this._count, total - CONFIG.UI_MAX_STEPS);
+        for (let i = startIdx; i < total; i++) {
+          this.appendStep(list[i]);
+        }
+      } catch {}
     }
 
     // Create a short, human-readable text for a recorded step
@@ -442,8 +467,8 @@
       document.addEventListener('focusin', this._onFocusIn, true);
       document.addEventListener('focusout', this._onFocusOut, true);
       document.addEventListener('change', this._onChange, true);
-      // capture-phase scroll to catch non-bubbling events on any container
-      document.addEventListener('scroll', this._onScroll, true);
+      // capture-phase scroll to catch non-bubbling events on any container (passive to avoid jank)
+      document.addEventListener('scroll', this._onScroll, { capture: true, passive: true });
       // Keyboard: record Enter and modifier combos
       document.addEventListener('keydown', this._onKeyDown, true);
       document.addEventListener('keyup', this._onKeyUp, true);
@@ -457,10 +482,10 @@
       document.removeEventListener('focusin', this._onFocusIn, true);
       document.removeEventListener('focusout', this._onFocusOut, true);
       document.removeEventListener('change', this._onChange, true);
-      document.removeEventListener('scroll', this._onScroll, true);
+      document.removeEventListener('scroll', this._onScroll, { capture: true });
       document.removeEventListener('keydown', this._onKeyDown, true);
       document.removeEventListener('keyup', this._onKeyUp, true);
-      document.removeEventListener('mousemove', this._onMouseMove, true);
+      document.removeEventListener('mousemove', this._onMouseMove, { capture: true });
       if (window === window.top) window.removeEventListener('message', this._onWindowMessage, true);
       // Detach per-element input listener if any
       if (this._focusedEl) this._focusedEl.removeEventListener('input', this._onInput, true);
@@ -476,9 +501,9 @@
 
     _updateHoverListener() {
       if (window !== window.top) return;
-      document.removeEventListener('mousemove', this._onMouseMove, true);
+      document.removeEventListener('mousemove', this._onMouseMove, { capture: true });
       if (this.isRecording && !this.isPaused && this.highlightEnabled) {
-        document.addEventListener('mousemove', this._onMouseMove, true);
+        document.addEventListener('mousemove', this._onMouseMove, { capture: true, passive: true });
       }
     }
 
@@ -605,7 +630,6 @@
         const tt = String(t).toLowerCase();
         if (tt === 'checkbox' || tt === 'radio' || tt === 'file') return;
       } catch {}
-      const target = SelectorEngine.buildTarget(el);
       const elRef = this._getElRef(el);
       const isSensitive =
         this.hideInputValues ||
@@ -625,6 +649,7 @@
         this.lastFill.ts = nowTs;
         return;
       }
+      const target = SelectorEngine.buildTarget(el);
       const newStep = { type: 'fill', target, value, screenshotOnFail: true };
       // attach recording-time identity only in memory (not persisted)
       newStep._recordingRef = elRef;
@@ -636,7 +661,6 @@
       if (!this.isRecording || this.isPaused) return;
       const el = e.target;
       if (el instanceof HTMLSelectElement) {
-        const target = SelectorEngine.buildTarget(el);
         const val = el.value;
         const nowTs = Date.now();
         const elRef = this._getElRef(el);
@@ -648,6 +672,7 @@
           this.lastFill.ts = nowTs;
           return;
         }
+        const target = SelectorEngine.buildTarget(el);
         const st = { type: 'fill', target, value: val, screenshotOnFail: true };
         st._recordingRef = elRef;
         this._pushStep(st);
@@ -740,6 +765,21 @@
 
     _onScroll(e) {
       if (!this.isRecording || this.isPaused) return;
+      try {
+        const overlay = document.getElementById('__rr_rec_overlay');
+        if (overlay) {
+          // Use composedPath for shadow DOM compatibility, fallback to target
+          const path = typeof e.composedPath === 'function' ? e.composedPath() : [e.target];
+          for (const element of path) {
+            // If the event path contains our overlay, ignore this scroll event
+            if (element === overlay) {
+              return;
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
       // Determine scroll source and positions
       const isDoc = e.target === document;
       const el = isDoc ? document.documentElement : e.target instanceof Element ? e.target : null;
@@ -935,8 +975,7 @@
         }
         // Replace entire timeline to avoid divergence across tabs
         const steps = Array.isArray(request.steps) ? request.steps : [];
-        rec.ui.resetTimeline();
-        for (const st of steps) rec.ui.appendStep(st);
+        rec.ui.applyTimelineUpdate(steps);
         sendResponse({ ok: true });
         return true;
       }
