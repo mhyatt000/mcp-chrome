@@ -301,4 +301,5 @@ export interface RunResult {
   outputs?: Record<string, any> | null;
   logs?: RunLogEntry[];
   screenshots?: { onFailure?: string | null };
+  paused?: boolean; // when true, the run was intentionally paused (e.g., breakpoint)
 }

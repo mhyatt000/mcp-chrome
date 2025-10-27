@@ -1,3 +1,3 @@
 // thin re-export for backward compatibility
-export { runFlow } from './runner';
-export type { RunOptions } from './runner';
+export { runFlow } from './engine/scheduler';
+export type { RunOptions } from './engine/scheduler';

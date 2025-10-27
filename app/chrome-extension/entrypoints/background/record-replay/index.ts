@@ -1,4 +1,4 @@
-import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
+import { BACKGROUND_MESSAGE_TYPES, CONTENT_MESSAGE_TYPES } from '@/common/message-types';
 import { Flow } from './types';
 import {
   listFlows,
@@ -281,6 +281,36 @@ export function initRecordReplayListeners() {
     try {
       if (details.frameId !== 0) return;
       const url = details.url || '';
+      // Ensure core content scripts are injected for this tab (pre-heat for replay)
+      await ensureCoreInjected(details.tabId);
+      // Ensure DOM observer is active on this tab (if triggers exist)
+      try {
+        const { [STORAGE_KEYS.RR_TRIGGERS]: stored } =
+          (await chrome.storage.local.get(STORAGE_KEYS.RR_TRIGGERS)) || {};
+        const triggers: any[] = Array.isArray(stored) ? stored : [];
+        const domTriggers = triggers
+          .filter((x) => x.type === 'dom' && x.enabled !== false)
+          .map((x: any) => ({
+            id: x.id,
+            selector: x.selector,
+            appear: x.appear !== false,
+            once: x.once !== false,
+            debounceMs: x.debounceMs ?? 800,
+          }));
+        if (typeof details.tabId === 'number') {
+          try {
+            await chrome.scripting.executeScript({
+              target: { tabId: details.tabId, allFrames: true },
+              files: ['inject-scripts/dom-observer.js'],
+              world: 'ISOLATED',
+            } as any);
+            await chrome.tabs.sendMessage(details.tabId, {
+              action: 'set_dom_triggers',
+              triggers: domTriggers,
+            } as any);
+          } catch {}
+        }
+      } catch {}
       const triggers = await listTriggers();
       const list = triggers.filter((x) => x.type === 'url' && x.enabled !== false) as any[];
       for (const t of list) {
@@ -378,6 +408,33 @@ async function refreshTriggers() {
 // Backward-compatible init function; initialize all trigger-related hooks/state
 async function initTriggerEngine() {
   await refreshTriggers();
+}
+
+// Ensure core content scripts are present for a tab after navigation
+async function ensureCoreInjected(tabId?: number) {
+  try {
+    if (typeof tabId !== 'number') return;
+    // Ping accessibility helper
+    const ok = await pingTab(tabId, CONTENT_MESSAGE_TYPES.ACCESSIBILITY_TREE_HELPER_PING);
+    if (!ok) {
+      await chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        files: ['inject-scripts/inject-bridge.js', 'inject-scripts/accessibility-tree-helper.js'],
+        world: 'ISOLATED',
+      } as any);
+    }
+  } catch {}
+}
+
+async function pingTab(tabId: number, action: string): Promise<boolean> {
+  try {
+    const resp: any = await chrome.tabs.sendMessage(tabId, { action } as any);
+    if (!resp) return false;
+    // Helpers generally respond { status: 'pong' } or { ok: true }
+    return resp.status === 'pong' || resp.ok === true;
+  } catch {
+    return false;
+  }
 }
 
 // Alarm listener executes scheduled flows

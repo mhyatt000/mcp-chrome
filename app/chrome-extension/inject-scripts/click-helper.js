@@ -22,6 +22,7 @@ if (window.__CLICK_HELPER_INITIALIZED__) {
     timeout = 5000,
     coordinates = null,
     ref = null,
+    double = false,
   ) {
     try {
       let element = null;
@@ -179,9 +180,14 @@ if (window.__CLICK_HELPER_INITIALIZED__) {
         element &&
         (elementInfo.clickMethod === 'selector' || elementInfo.clickMethod === 'ref')
       ) {
-        element.click();
+        if (double) {
+          simulateDomDoubleClick(element, clickX, clickY);
+        } else {
+          element.click();
+        }
       } else {
-        simulateClick(clickX, clickY);
+        if (double) simulateDoubleClick(clickX, clickY);
+        else simulateClick(clickX, clickY);
       }
 
       // Wait for navigation if needed
@@ -223,6 +229,52 @@ if (window.__CLICK_HELPER_INITIALIZED__) {
       element.dispatchEvent(clickEvent);
     } else {
       document.dispatchEvent(clickEvent);
+    }
+  }
+
+  /**
+   * Simulate a double click sequence at specific coordinates
+   */
+  function simulateDoubleClick(x, y) {
+    simulateClick(x, y);
+    setTimeout(() => {
+      simulateClick(x, y);
+      const dbl = new MouseEvent('dblclick', {
+        view: window,
+        bubbles: true,
+        cancelable: true,
+        clientX: x,
+        clientY: y,
+      });
+      const el = document.elementFromPoint(x, y);
+      if (el) el.dispatchEvent(dbl);
+      else document.dispatchEvent(dbl);
+    }, 30);
+  }
+
+  /**
+   * Simulate double click using element when available
+   */
+  function simulateDomDoubleClick(element, x, y) {
+    try {
+      element.click();
+      setTimeout(() => {
+        element.click();
+        const rect = element.getBoundingClientRect();
+        const cx = x ?? rect.left + rect.width / 2;
+        const cy = y ?? rect.top + rect.height / 2;
+        const dbl = new MouseEvent('dblclick', {
+          view: window,
+          bubbles: true,
+          cancelable: true,
+          clientX: cx,
+          clientY: cy,
+        });
+        element.dispatchEvent(dbl);
+      }, 30);
+    } catch (e) {
+      // fallback to coordinates
+      simulateDoubleClick(x, y);
     }
   }
 
@@ -271,6 +323,7 @@ if (window.__CLICK_HELPER_INITIALIZED__) {
         request.timeout,
         request.coordinates,
         request.ref,
+        !!request.double,
       )
         .then(sendResponse)
         .catch((error) => {

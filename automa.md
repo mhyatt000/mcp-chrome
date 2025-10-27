@@ -210,7 +210,7 @@
 
 - Automa 块清单：`other/automa/src/utils/shared.js`
 - Automa 典型 Handler：`other/automa/src/content/blocksHandler/*`、`other/automa/src/workflowEngine/blocksHandler/*`
-- 本实现执行层：`app/chrome-extension/entrypoints/background/record-replay/*`（`runner.ts`、`node-registry.ts`、`selector-engine.ts`、`rr-utils.ts`）
+- 本实现执行层：`app/chrome-extension/entrypoints/background/record-replay/*`（`engine/*`、`nodes/*`、`selector-engine.ts`、`rr-utils.ts`）
 - 浏览器工具层：`app/chrome-extension/entrypoints/background/tools/browser/*`
 - 录制/注入：`app/chrome-extension/inject-scripts/*`
 - Builder 相关：`app/chrome-extension/entrypoints/popup/components/builder/*`

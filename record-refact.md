@@ -1679,3 +1679,20 @@ class RecordingStateManager {
   clear(): Promise<void>;
 }
 ```
+
+---
+
+## 回放重构变更（DAG-only）
+
+本次回放执行改为仅支持 DAG（nodes + edges + subflows），弃用线性 `steps[]` 路径：
+
+- 破坏性变更：当 Flow 不含 `nodes` 时，运行器返回错误 `dag-required`，提示迁移。
+- 双击修复：`dblclick` 统一通过 CLICK 工具（内容脚本），支持 `frameId`，iframe 内双击准确。
+- 控制流：
+  - 条件节点通过 `nextLabel` 选择分支。
+  - foreach/while 节点通过返回 `control` 调用 `flow.subflows[subflowId]` 作为循环体（DAG 路径已实现）。
+
+迁移建议：
+
+- 使用构建器的节点画布保存 `nodes/edges`（现有 UI 已支持）。
+- 旧 Flow 若仅存 `steps[]`：通过现有 `stepsToNodes()` 转换为 `nodes/edges` 并保存。涉及循环的步骤需迁移为节点，并在 `flow.subflows` 内定义子流体。

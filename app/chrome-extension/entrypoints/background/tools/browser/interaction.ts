@@ -16,6 +16,7 @@ interface ClickToolParams {
   waitForNavigation?: boolean; // Whether to wait for navigation to complete after click
   timeout?: number; // Timeout in milliseconds for waiting for the element or navigation
   frameId?: number; // Target frame for ref/selector resolution
+  double?: boolean; // Perform double click when true
 }
 
 /**
@@ -68,6 +69,7 @@ class ClickTool extends BaseBrowserToolExecutor {
           ref: args.ref,
           waitForNavigation,
           timeout,
+          double: args.double === true,
         },
         frameId,
       );
