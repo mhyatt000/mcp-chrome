@@ -1,11 +1,16 @@
 // ui-nodes.ts — UI registry for builder nodes (sidebar, canvas, properties)
 // Comments in English to explain intent.
 
-import type { Component } from 'vue';
+import { markRaw, type Component } from 'vue';
 import type { NodeBase, NodeType } from '@/entrypoints/background/record-replay/types';
 import { NODE_TYPES } from '@/common/node-types';
 import { defaultConfigFor as fallbackDefaultConfig } from '@/entrypoints/popup/components/builder/model/transforms';
 import { validateNode as fallbackValidateNode } from '@/entrypoints/popup/components/builder/model/validation';
+import {
+  listNodeSpecs,
+  getNodeSpec,
+} from '@/entrypoints/popup/components/builder/model/node-spec-registry';
+import { STEP_TYPES } from 'chrome-mcp-shared';
 
 // Canvas renderer components
 import NodeCard from '@/entrypoints/popup/components/builder/components/nodes/NodeCard.vue';
@@ -19,6 +24,11 @@ import PropSetAttribute from '@/entrypoints/popup/components/builder/components/
 import PropDrag from '@/entrypoints/popup/components/builder/components/properties/PropertyDrag.vue';
 import PropScroll from '@/entrypoints/popup/components/builder/components/properties/PropertyScroll.vue';
 import PropNavigate from '@/entrypoints/popup/components/builder/components/properties/PropertyNavigate.vue';
+import PropertyFromSpec from '@/entrypoints/popup/components/builder/components/properties/PropertyFromSpec.vue';
+import { registerBuiltinSpecs } from '@/entrypoints/popup/components/builder/model/node-specs-builtin';
+
+// Register builtin NodeSpecs at module init
+registerBuiltinSpecs();
 import PropWait from '@/entrypoints/popup/components/builder/components/properties/PropertyWait.vue';
 import PropAssert from '@/entrypoints/popup/components/builder/components/properties/PropertyAssert.vue';
 import PropDelay from '@/entrypoints/popup/components/builder/components/properties/PropertyDelay.vue';
@@ -54,245 +64,34 @@ export interface NodeUIConfig {
   validate?: (node: NodeBase) => string[];
 }
 
-// Registry contents; use existing color/icon CSS classes from Sidebar.vue
+// Registry contents generated from NodeSpec; use existing color/icon CSS classes
 const baseCard = NodeCard as Component;
 
-export const NODE_UI_LIST: NodeUIConfig[] = [
-  {
-    type: 'trigger' as any,
-    label: '触发器',
-    category: 'Actions',
-    iconClass: 'icon-trigger',
-    canvas: baseCard,
-    property: PropTrigger,
-    io: { inputs: 0, outputs: 1 },
-    defaultConfig: () => ({
-      enabled: true,
-      description: '',
-      modes: {
-        manual: true,
-        url: false,
-        contextMenu: false,
-        command: false,
-        dom: false,
-        schedule: false,
-      },
-      url: { rules: [] as Array<{ kind: 'url' | 'domain' | 'path'; value: string }> },
-      contextMenu: { title: '运行工作流', contexts: ['all'] as string[], enabled: false },
-      command: { commandKey: '', enabled: false },
-      dom: { selector: '', appear: true, once: true, debounceMs: 800, enabled: false },
-      schedules: [] as Array<{
-        id?: string;
-        type: 'once' | 'interval' | 'daily';
-        when: string;
-        enabled: boolean;
-      }>,
-    }),
-  },
-  {
-    type: NODE_TYPES.NAVIGATE,
-    label: '导航',
-    category: 'Actions',
-    iconClass: 'icon-navigate',
-    canvas: baseCard,
-    property: PropNavigate,
-  },
-  {
-    type: NODE_TYPES.CLICK,
-    label: '点击',
-    category: 'Actions',
-    iconClass: 'icon-click',
-    canvas: baseCard,
-    property: PropClick,
-  },
-  {
-    type: NODE_TYPES.DRAG,
-    label: '拖拽',
-    category: 'Actions',
-    iconClass: 'icon-drag',
-    canvas: baseCard,
-    property: PropDrag,
-  },
-  {
-    type: NODE_TYPES.SCROLL,
-    label: '滚动',
-    category: 'Actions',
-    iconClass: 'icon-scroll',
-    canvas: baseCard,
-    property: PropScroll,
-  },
-  {
-    type: NODE_TYPES.DBLCLICK,
-    label: '双击',
-    category: 'Actions',
-    iconClass: 'icon-click',
-    canvas: baseCard,
-    property: PropClick,
-  },
-  {
-    type: NODE_TYPES.FILL,
-    label: '填充',
-    category: 'Actions',
-    iconClass: 'icon-fill',
-    canvas: baseCard,
-    property: PropFill,
-  },
-  {
-    type: NODE_TYPES.KEY,
-    label: '键盘',
-    category: 'Actions',
-    iconClass: 'icon-key',
-    canvas: baseCard,
-    property: PropKey,
-  },
-  {
-    type: NODE_TYPES.WAIT,
-    label: '等待',
-    category: 'Actions',
-    iconClass: 'icon-wait',
-    canvas: baseCard,
-    property: PropWait,
-  },
-  {
-    type: NODE_TYPES.ASSERT,
-    label: '断言',
-    category: 'Actions',
-    iconClass: 'icon-assert',
-    canvas: baseCard,
-    property: PropAssert,
-  },
-  {
-    type: 'delay',
-    label: '延迟',
-    category: 'Actions',
-    iconClass: 'icon-delay',
-    canvas: baseCard,
-    property: PropDelay,
-  },
+function specToUi(spec: any): NodeUIConfig {
+  const canvas = spec.type === (STEP_TYPES.IF as any) ? (NodeIf as Component) : baseCard;
+  const outputs = Array.isArray(spec.ports?.outputs) ? spec.ports.outputs.length : 'any';
+  return {
+    type: spec.type as any,
+    label: spec.display?.label || String(spec.type),
+    category: (spec.display?.category || 'Actions') as any,
+    iconClass: spec.display?.iconClass || 'icon-default',
+    // Mark component refs as raw to prevent them from being proxied/reactive by consumers
+    canvas: markRaw(canvas) as Component,
+    property: markRaw(PropertyFromSpec) as Component,
+    io: { inputs: spec.ports?.inputs ?? 1, outputs },
+    defaultConfig: () => ({ ...(spec.defaults || {}) }),
+    validate: (node: NodeBase) => {
+      try {
+        const cfg = (node as any)?.config || {};
+        return (getNodeSpec(node.type as any)?.validate?.(cfg) || []) as string[];
+      } catch {
+        return [];
+      }
+    },
+  } as any;
+}
 
-  {
-    type: NODE_TYPES.IF,
-    label: '条件',
-    category: 'Logic',
-    iconClass: 'icon-if',
-    canvas: NodeIf as Component,
-    property: PropIf,
-  },
-  {
-    type: NODE_TYPES.FOREACH,
-    label: '循环',
-    category: 'Logic',
-    iconClass: 'icon-foreach',
-    canvas: baseCard,
-    property: PropForeach,
-  },
-  {
-    type: NODE_TYPES.WHILE,
-    label: '循环',
-    category: 'Logic',
-    iconClass: 'icon-while',
-    canvas: baseCard,
-    property: PropWhile,
-  },
-
-  {
-    type: NODE_TYPES.HTTP,
-    label: 'HTTP',
-    category: 'Tools',
-    iconClass: 'icon-http',
-    canvas: baseCard,
-    property: PropHttp,
-  },
-  {
-    type: NODE_TYPES.EXTRACT,
-    label: '提取',
-    category: 'Tools',
-    iconClass: 'icon-extract',
-    canvas: baseCard,
-    property: PropExtract,
-  },
-  {
-    type: NODE_TYPES.SCREENSHOT,
-    label: '截图',
-    category: 'Tools',
-    iconClass: 'icon-screenshot',
-    canvas: baseCard,
-    property: PropScreenshot,
-  },
-  {
-    type: NODE_TYPES.TRIGGER_EVENT,
-    label: '触发事件',
-    category: 'Tools',
-    iconClass: 'icon-trigger',
-    canvas: baseCard,
-    property: PropTriggerEvent,
-  },
-  {
-    type: NODE_TYPES.SET_ATTRIBUTE,
-    label: '设置属性',
-    category: 'Tools',
-    iconClass: 'icon-attr',
-    canvas: baseCard,
-    property: PropSetAttribute,
-  },
-  {
-    type: NODE_TYPES.LOOP_ELEMENTS,
-    label: '循环元素',
-    category: 'Tools',
-    iconClass: 'icon-loop',
-    canvas: baseCard,
-    property: PropLoopElements,
-  },
-  {
-    type: NODE_TYPES.SWITCH_FRAME,
-    label: '切换Frame',
-    category: 'Tools',
-    iconClass: 'icon-frame',
-    canvas: baseCard,
-    property: PropSwitchFrame,
-  },
-  {
-    type: NODE_TYPES.HANDLE_DOWNLOAD,
-    label: '下载处理',
-    category: 'Tools',
-    iconClass: 'icon-download',
-    canvas: baseCard,
-    property: PropHandleDownload,
-  },
-  {
-    type: NODE_TYPES.SCRIPT,
-    label: '脚本',
-    category: 'Tools',
-    iconClass: 'icon-script',
-    canvas: baseCard,
-    property: PropScript,
-  },
-
-  {
-    type: NODE_TYPES.OPEN_TAB,
-    label: '打开标签',
-    category: 'Tabs',
-    iconClass: 'icon-openTab',
-    canvas: baseCard,
-    property: PropOpenTab,
-  },
-  {
-    type: NODE_TYPES.SWITCH_TAB,
-    label: '切换标签',
-    category: 'Tabs',
-    iconClass: 'icon-switchTab',
-    canvas: baseCard,
-    property: PropSwitchTab,
-  },
-  {
-    type: NODE_TYPES.CLOSE_TAB,
-    label: '关闭标签',
-    category: 'Tabs',
-    iconClass: 'icon-closeTab',
-    canvas: baseCard,
-    property: PropCloseTab,
-  },
-];
+export const NODE_UI_LIST: NodeUIConfig[] = listNodeSpecs().map(specToUi);
 
 const REGISTRY_MAP: Record<string, NodeUIConfig> = Object.fromEntries(
   NODE_UI_LIST.map((n) => [n.type, n]),
@@ -328,6 +127,9 @@ export function canvasTypeKey(t: NodeType): string {
 
 // Default config resolver with registry override
 export function defaultConfigOf(t: NodeType): any {
+  // Prefer NodeSpec defaults
+  const spec = getNodeSpec(t as any);
+  if (spec?.defaults) return { ...spec.defaults };
   const item = (NODE_UI_REGISTRY as any)[t] as NodeUIConfig | undefined;
   if (item?.defaultConfig) return item.defaultConfig();
   return fallbackDefaultConfig(t as any);
@@ -335,13 +137,16 @@ export function defaultConfigOf(t: NodeType): any {
 
 // Validation via registry where present
 export function validateNodeWithRegistry(n: NodeBase): string[] {
+  // Prefer NodeSpec validate
+  try {
+    const spec = getNodeSpec(n.type as any);
+    if (spec?.validate) return spec.validate((n as any).config || {}) || [];
+  } catch {}
   const item = (NODE_UI_REGISTRY as any)[n.type] as NodeUIConfig | undefined;
   if (item?.validate) {
     try {
       return item.validate(n) || [];
-    } catch {
-      return [];
-    }
+    } catch {}
   }
   return fallbackValidateNode(n);
 }

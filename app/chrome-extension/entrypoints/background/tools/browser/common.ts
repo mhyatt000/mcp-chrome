@@ -71,54 +71,149 @@ class NavigateTool extends BaseBrowserToolExecutor {
       }
 
       // 1. Check if URL is already open
-      // Get all tabs and manually compare URLs
+      // Prefer Chrome's URL match patterns for robust matching (host/path variations)
       console.log(`Checking if URL is already open: ${url}`);
-      // Get all tabs
-      const allTabs = await chrome.tabs.query({});
-      // Manually filter matching tabs
-      const tabs = allTabs.filter((tab) => {
-        // Normalize URLs for comparison (remove trailing slashes)
-        const tabUrl = tab.url?.endsWith('/') ? tab.url.slice(0, -1) : tab.url;
-        const targetUrl = url.endsWith('/') ? url.slice(0, -1) : url;
-        return tabUrl === targetUrl;
-      });
-      console.log(`Found ${tabs.length} matching tabs`);
 
-      if (tabs && tabs.length > 0) {
-        const existingTab = tabs[0];
+      // Build robust match patterns from the provided URL.
+      // This mirrors the approach in CloseTabsTool: ensure wildcard path and
+      // add common variants (www/no-www, http/https) to handle real-world redirects.
+      const buildUrlPatterns = (input: string): string[] => {
+        const patterns = new Set<string>();
+        try {
+          if (!input.includes('*')) {
+            const u = new URL(input);
+            // Use host-level wildcard to include all paths; we'll do precise selection later
+            const pathWildcard = '/*';
+
+            const hostNoWww = u.host.replace(/^www\./, '');
+            const hostWithWww = hostNoWww.startsWith('www.') ? hostNoWww : `www.${hostNoWww}`;
+
+            // Keep original host
+            patterns.add(`${u.protocol}//${u.host}${pathWildcard}`);
+            // Add no-www variant
+            patterns.add(`${u.protocol}//${hostNoWww}${pathWildcard}`);
+            // Add www variant
+            patterns.add(`${u.protocol}//${hostWithWww}${pathWildcard}`);
+
+            // Add protocol variant to catch http↔https redirects
+            const altProtocol = u.protocol === 'https:' ? 'http:' : 'https:';
+            patterns.add(`${altProtocol}//${u.host}${pathWildcard}`);
+            patterns.add(`${altProtocol}//${hostNoWww}${pathWildcard}`);
+            patterns.add(`${altProtocol}//${hostWithWww}${pathWildcard}`);
+          } else {
+            patterns.add(input);
+          }
+        } catch {
+          // Fallback: best-effort wildcard suffix
+          patterns.add(input.endsWith('/') ? `${input}*` : `${input}/*`);
+        }
+        return Array.from(patterns);
+      };
+
+      const urlPatterns = buildUrlPatterns(url);
+      const candidateTabs = await chrome.tabs.query({ url: urlPatterns });
+      console.log(`Found ${candidateTabs.length} matching tabs with patterns:`, urlPatterns);
+
+      // Prefer strict match when user specifies a concrete path/query.
+      // Only fall back to host-level activation when the target is site root.
+      const pickBestMatch = (target: string, tabsToPick: chrome.tabs.Tab[]) => {
+        let targetUrl: URL | undefined;
+        try {
+          targetUrl = new URL(target);
+        } catch {
+          // Not a fully-qualified URL; cannot do structured comparison
+          return tabsToPick[0];
+        }
+
+        const normalizePath = (p: string) => {
+          if (!p) return '/';
+          // Ensure leading slash
+          const withLeading = p.startsWith('/') ? p : `/${p}`;
+          // Remove trailing slash except when root
+          return withLeading !== '/' && withLeading.endsWith('/')
+            ? withLeading.slice(0, -1)
+            : withLeading;
+        };
+
+        const hostBase = (h: string) => h.replace(/^www\./, '').toLowerCase();
+        const isRootTarget = normalizePath(targetUrl.pathname) === '/' && !targetUrl.search;
+        const targetPath = normalizePath(targetUrl.pathname);
+        const targetSearch = targetUrl.search || '';
+        const targetHostBase = hostBase(targetUrl.host);
+
+        let best: { tab?: chrome.tabs.Tab; score: number } = { score: -1 };
+
+        for (const tab of tabsToPick) {
+          const tabUrlStr = tab.url || '';
+          let tabUrl: URL | undefined;
+          try {
+            tabUrl = new URL(tabUrlStr);
+          } catch {
+            continue;
+          }
+
+          const tabHostBase = hostBase(tabUrl.host);
+          if (tabHostBase !== targetHostBase) continue;
+
+          const tabPath = normalizePath(tabUrl.pathname);
+          const tabSearch = tabUrl.search || '';
+
+          // Scoring:
+          // 3 - exact path match and (if target has query) exact query match
+          // 2 - exact path match ignoring query (target without query)
+          // 1 - same host, any path (only if target is root)
+          let score = -1;
+          const pathEqual = tabPath === targetPath;
+          const searchEqual = tabSearch === targetSearch;
+
+          if (pathEqual && (targetSearch ? searchEqual : true)) {
+            score = 3;
+          } else if (pathEqual && !targetSearch) {
+            score = 2;
+          }
+
+          if (score > best.score) {
+            best = { tab, score };
+            if (score === 3) break; // Cannot do better
+          }
+        }
+
+        return best.tab;
+      };
+
+      const existingTab = pickBestMatch(url, candidateTabs);
+      if (existingTab?.id !== undefined) {
         console.log(
           `URL already open in Tab ID: ${existingTab.id}, Window ID: ${existingTab.windowId}`,
         );
 
-        if (existingTab.id !== undefined) {
-          // Activate the tab
-          await chrome.tabs.update(existingTab.id, { active: true });
+        // Activate the tab
+        await chrome.tabs.update(existingTab.id, { active: true });
 
-          if (existingTab.windowId !== undefined) {
-            // Bring the window containing this tab to the foreground and focus it
-            await chrome.windows.update(existingTab.windowId, { focused: true });
-          }
-
-          console.log(`Activated existing Tab ID: ${existingTab.id}`);
-          // Get updated tab information and return it
-          const updatedTab = await chrome.tabs.get(existingTab.id);
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify({
-                  success: true,
-                  message: 'Activated existing tab',
-                  tabId: updatedTab.id,
-                  windowId: updatedTab.windowId,
-                  url: updatedTab.url,
-                }),
-              },
-            ],
-            isError: false,
-          };
+        if (existingTab.windowId !== undefined) {
+          // Bring the window containing this tab to the foreground and focus it
+          await chrome.windows.update(existingTab.windowId, { focused: true });
         }
+
+        console.log(`Activated existing Tab ID: ${existingTab.id}`);
+        // Get updated tab information and return it
+        const updatedTab = await chrome.tabs.get(existingTab.id);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                message: 'Activated existing tab',
+                tabId: updatedTab.id,
+                windowId: updatedTab.windowId,
+                url: updatedTab.url,
+              }),
+            },
+          ],
+          isError: false,
+        };
       }
 
       // 2. If URL is not already open, decide how to open it based on options

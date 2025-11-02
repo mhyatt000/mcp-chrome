@@ -276,6 +276,66 @@ export function useBuilderStore(initial?: FlowV2 | null) {
     } catch {}
   }
 
+  /**
+   * Derive available variables for the property panel.
+   * - Includes declared flow variables (global)
+   * - Includes variables produced by preceding nodes (saveAs/assign/itemVar etc.)
+   * If currentId is provided, only nodes before it in topological order are considered.
+   */
+  function listAvailableVariables(currentId?: string): Array<{
+    key: string;
+    origin: 'global' | 'node';
+    nodeId?: string;
+    nodeName?: string;
+  }> {
+    const result: Array<{
+      key: string;
+      origin: 'global' | 'node';
+      nodeId?: string;
+      nodeName?: string;
+    }> = [];
+    const seen = new Set<string>();
+
+    // 1) Flow-declared variables
+    const declared = (flowLocal.variables || []) as Array<{ key: string }>;
+    for (const v of declared) {
+      const k = String(v?.key || '').trim();
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      result.push({ key: k, origin: 'global' });
+    }
+
+    // 2) Variables derived from previous nodes
+    const ordered = topoOrder(nodes as any, edges as any);
+    let cutoffIndex =
+      typeof currentId === 'string' ? ordered.findIndex((n) => n.id === currentId) : -1;
+    if (cutoffIndex < 0) cutoffIndex = ordered.length; // include all if not found
+    const prevNodes = ordered.slice(0, cutoffIndex);
+    for (const n of prevNodes) {
+      const cfg: any = (n as any).config || {};
+      const nodeName = String((n as any).name || n.id || 'node');
+      const pushVar = (k: string) => {
+        const key = String(k || '').trim();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        result.push({ key, origin: 'node', nodeId: n.id, nodeName });
+      };
+      // Generic saveAs
+      if (typeof cfg.saveAs === 'string') pushVar(cfg.saveAs);
+      // assign mapping (keys are variable names)
+      if (cfg.assign && typeof cfg.assign === 'object') {
+        for (const k of Object.keys(cfg.assign)) pushVar(k);
+      }
+      // loop elements: list var + item var
+      if ((n as any).type === 'loopElements') {
+        if (typeof cfg.saveAs === 'string') pushVar(cfg.saveAs);
+        if (typeof cfg.itemVar === 'string') pushVar(cfg.itemVar);
+      }
+    }
+
+    return result;
+  }
+
   function importFromSteps() {
     const arr = stepsToNodes(flowLocal.steps || []);
     nodes.splice(0, nodes.length, ...arr);
@@ -531,6 +591,7 @@ export function useBuilderStore(initial?: FlowV2 | null) {
     addNodeAt,
     connectFrom,
     onConnect,
+    listAvailableVariables,
     listSubflowIds,
     addSubflow,
     removeSubflow,

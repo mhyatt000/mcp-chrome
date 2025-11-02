@@ -112,6 +112,8 @@ export const TOOL_MESSAGE_TYPES = {
   // DOM observer trigger bridge
   SET_DOM_TRIGGERS: 'set_dom_triggers',
   DOM_TRIGGER_FIRED: 'dom_trigger_fired',
+  // Record & Replay overlay: variable collection
+  COLLECT_VARIABLES: 'collectVariables',
 } as const;
 
 // Type unions for type safety

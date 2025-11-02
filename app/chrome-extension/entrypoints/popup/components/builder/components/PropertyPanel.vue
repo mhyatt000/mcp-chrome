@@ -28,16 +28,12 @@
 
       <div class="divider"></div>
 
-      <!-- 动态：基于注册表的节点属性面板渲染 -->
-      <component
-        v-if="node && PropComp"
-        :is="PropComp"
+      <!-- 属性表单：统一使用 NodeSpec 驱动的表单引擎渲染 -->
+      <PropertyFromSpec
+        v-if="node"
         :key="node.type + ':' + node.id"
         :node="node"
         :variables="variables"
-        :subflow-ids="subflowIds"
-        @create-subflow="(id: string) => emit('create-subflow', id)"
-        @switch-to-subflow="(id: string) => emit('switch-to-subflow', id)"
       />
       <div class="divider"></div>
 
@@ -98,7 +94,7 @@ import { computed, watch, onMounted, ref } from 'vue';
 import type { NodeBase } from '@/entrypoints/background/record-replay/types';
 import { validateNodeWithRegistry } from '@/entrypoints/popup/components/builder/model/ui-nodes';
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
-import { NODE_UI_REGISTRY } from '@/entrypoints/popup/components/builder/model/ui-nodes';
+import PropertyFromSpec from '@/entrypoints/popup/components/builder/components/properties/PropertyFromSpec.vue';
 
 const props = defineProps<{
   node: NodeBase | null;
@@ -112,9 +108,6 @@ const emit = defineEmits<{
   (e: 'switch-to-subflow', id: string): void;
   (e: 'remove-node', id: string): void;
 }>();
-
-// Resolve per-node property component from registry
-const PropComp = computed(() => (props.node ? NODE_UI_REGISTRY[props.node.type]?.property : null));
 
 function onRemove() {
   // Emit remove event only when node exists
@@ -295,7 +288,7 @@ const retryCount = computed(() => Number((props.node as any)?.config?.retry?.cou
 const retryInterval = computed(() => Number((props.node as any)?.config?.retry?.intervalMs ?? 0));
 const retryBackoff = computed(() => String((props.node as any)?.config?.retry?.backoff ?? 'none'));
 function ensureRetry() {
-  const n = props.node as any;
+  const n = props.node;
   if (!n) return;
   if (!n.config) n.config = {};
   if (!n.config.retry) n.config.retry = { count: 0, intervalMs: 0, backoff: 'none' };

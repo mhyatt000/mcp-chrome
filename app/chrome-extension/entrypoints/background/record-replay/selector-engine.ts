@@ -182,7 +182,4 @@ export async function locateElement(
 /**
  * Ensure screenshot context hostname is still valid for coordinate-based actions
  */
-export function validateScreenshotHostname(_tabUrl?: string): string | null {
-  // Minimal placeholder - domain safety checks handled elsewhere
-  return null;
-}
+// Note: screenshot hostname validation is handled elsewhere; removed legacy stub.

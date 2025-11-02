@@ -6,8 +6,9 @@ import {
   topoOrder as sharedTopoOrder,
   mapNodeToStep as sharedMapNodeToStep,
 } from 'chrome-mcp-shared';
-import type { Edge as DagEdge, NodeBase as DagNode } from './types';
+import type { Edge as DagEdge, NodeBase as DagNode, Step } from './types';
 import { handleCallTool } from '../tools';
+import { EDGE_LABELS } from 'chrome-mcp-shared';
 
 export function applyAssign(
   target: Record<string, any>,
@@ -106,8 +107,9 @@ export async function waitForNetworkIdle(totalTimeoutMs: number, idleThresholdMs
       name: TOOL_NAMES.BROWSER.NETWORK_CAPTURE_START,
       args: {
         includeStatic: false,
+        // Ensure capture remains active until we explicitly stop it
         maxCaptureTime: Math.min(60_000, Math.max(threshold + 500, 2_000)),
-        inactivityTimeout: threshold,
+        inactivityTimeout: 0,
       },
     });
     await new Promise((r) => setTimeout(r, threshold + 200));
@@ -230,15 +232,15 @@ export async function waitForNavigation(timeoutMs?: number, prevUrl?: string): P
 }
 
 export function topoOrder(nodes: DagNode[], edges: DagEdge[]): DagNode[] {
-  return sharedTopoOrder(nodes as any, edges as any) as any;
+  return sharedTopoOrder(nodes, edges as any);
 }
 
 // Helper: filter only default edges (no label or label === 'default')
 export function defaultEdgesOnly(edges: DagEdge[] = []): DagEdge[] {
-  return (edges || []).filter((e) => !e.label || e.label === 'default');
+  return (edges || []).filter((e) => !e.label || e.label === EDGE_LABELS.DEFAULT);
 }
 
-export function mapDagNodeToStep(n: DagNode): any {
+export function mapDagNodeToStep(n: DagNode): Step {
   const s: any = sharedMapNodeToStep(n as any);
   if ((n as any)?.type === 'if') {
     // forward extended conditional config for DAG mode
@@ -247,5 +249,5 @@ export function mapDagNodeToStep(n: DagNode): any {
     if ('else' in cfg) s.else = cfg.else;
     if (cfg.condition && !s.condition) s.condition = cfg.condition; // backward-compat
   }
-  return s;
+  return s as Step;
 }

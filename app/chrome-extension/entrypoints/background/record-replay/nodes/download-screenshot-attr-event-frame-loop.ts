@@ -219,9 +219,9 @@ export const loopElementsNode: NodeRuntime<any> = {
             let current: Element | null = node;
             while (current && current.tagName !== 'BODY') {
               let part = current.tagName.toLowerCase();
-              const parent = current.parentElement;
-              if (parent) {
-                const siblings = Array.from(parent.children).filter(
+              const parentEl: Element | null = current.parentElement;
+              if (parentEl) {
+                const siblings = Array.from(parentEl.children).filter(
                   (c) => (c as any).tagName === current!.tagName,
                 );
                 if (siblings.length > 1) {
@@ -230,7 +230,7 @@ export const loopElementsNode: NodeRuntime<any> = {
                 }
               }
               path = path ? `${part} > ${path}` : part;
-              current = parent;
+              current = parentEl;
             }
             return path ? `body > ${path}` : 'body';
           };

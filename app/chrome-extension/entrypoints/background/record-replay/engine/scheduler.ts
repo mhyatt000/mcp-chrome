@@ -1,27 +1,26 @@
-// engine/scheduler.ts — DAG-only orchestrator for record-replay
-// Core responsibilities are split across: Orchestrator (prepare → traverse → cleanup),
-// policies (wait/retry), nodes registry (executeStep), logger (overlay/persist), plugins (hooks).
-
-import { TOOL_NAMES } from 'chrome-mcp-shared';
+import { STEP_TYPES, TOOL_NAMES } from 'chrome-mcp-shared';
+import { TOOL_MESSAGE_TYPES } from '@/common/message-types';
 import { handleCallTool } from '@/entrypoints/background/tools';
-import type { Flow, RunLogEntry, RunResult, Step, StepScript } from '../types';
+import type { Edge, Flow, NodeBase, RunLogEntry, RunResult, Step } from '../types';
 import {
   mapDagNodeToStep,
   topoOrder,
   ensureTab,
   expandTemplatesDeep,
-  waitForNetworkIdle,
-  applyAssign,
   defaultEdgesOnly,
 } from '../rr-utils';
-import { executeStep, type ExecCtx } from '../nodes';
+import type { ExecCtx } from '../nodes';
 import { RunLogger } from './logging/run-logger';
 import { PluginManager } from './plugins/manager';
 import type { RunPlugin } from './plugins/types';
 import { breakpointPlugin } from './plugins/breakpoint';
-import { waitForNavigationDone, maybeQuickWaitForNav, ensureReadPageIfWeb } from './policies/wait';
-import { withRetry } from './policies/retry';
+import { evalExpression } from './utils/expression';
 import { runState } from './state-manager';
+import { AfterScriptQueue } from './runners/after-script-queue';
+import { StepRunner } from './runners/step-runner';
+import { ControlFlowRunner } from './runners/control-flow-runner';
+import { SubflowRunner } from './runners/subflow-runner';
+import { ENGINE_CONSTANTS, LOG_STEP_IDS } from './constants';
 
 export interface RunOptions {
   tabTarget?: 'current' | 'new';
@@ -36,22 +35,23 @@ export interface RunOptions {
 }
 
 class ExecutionOrchestrator {
+  // moved to ENGINE_CONSTANTS.MAX_ITERATIONS
   private runId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   private startAt = Date.now();
   private logger = new RunLogger(this.runId);
-  private pluginManager = new PluginManager(
-    this.options.plugins && this.options.plugins.length
-      ? this.options.plugins
-      : [breakpointPlugin()],
-  );
+  // Initialized in constructor to avoid using `this.options` before it's set
+  private pluginManager: PluginManager;
   private vars: Record<string, any> = Object.create(null);
   private deadline = 0;
   private networkCaptureStarted = false;
   private paused = false;
   private failed = 0;
-  private pendingAfterScripts: StepScript[] = [];
   private steps: Step[] = [];
   private prepareError: RunResult | null = null;
+  private afterScripts = new AfterScriptQueue(this.logger);
+  private stepRunner: StepRunner;
+  private controlFlowRunner!: ControlFlowRunner;
+  private subflowRunner!: SubflowRunner;
 
   constructor(
     private flow: Flow,
@@ -61,13 +61,26 @@ class ExecutionOrchestrator {
     if (options.args) Object.assign(this.vars, options.args);
     const globalTimeout = Math.max(0, Number(options.timeoutMs || 0));
     this.deadline = globalTimeout > 0 ? this.startAt + globalTimeout : 0;
+    this.pluginManager = new PluginManager(
+      options.plugins && options.plugins.length ? options.plugins : [breakpointPlugin()],
+    );
+    this.stepRunner = new StepRunner({
+      runId: this.runId,
+      flow: this.flow,
+      vars: this.vars,
+      logger: this.logger,
+      pluginManager: this.pluginManager,
+      afterScripts: this.afterScripts,
+      getRemainingBudgetMs: () =>
+        this.deadline > 0 ? Math.max(0, this.deadline - Date.now()) : Number.POSITIVE_INFINITY,
+    });
   }
 
   private ensureWithinDeadline() {
     if (this.deadline > 0 && Date.now() > this.deadline) {
       const err = new Error('Global timeout reached');
       this.logger.push({
-        stepId: 'global-timeout',
+        stepId: LOG_STEP_IDS.GLOBAL_TIMEOUT,
         status: 'failed',
         message: 'Global timeout reached',
       });
@@ -89,16 +102,18 @@ class ExecutionOrchestrator {
     // Derive default startUrl
     let derivedStartUrl: string | undefined;
     try {
-      const hasDag0 = Array.isArray(this.flow.nodes) && this.flow.nodes.length > 0;
-      const nodes0 = hasDag0 ? this.flow.nodes || [] : [];
-      const edges0 = hasDag0 ? this.flow.edges || [] : [];
+      const hasDag0 = Array.isArray(this.flow.nodes) && (this.flow.nodes?.length || 0) > 0;
+      const nodes0: NodeBase[] = hasDag0 ? this.flow.nodes || [] : [];
+      const edges0: Edge[] = hasDag0 ? this.flow.edges || [] : [];
       const defaultEdges0 = hasDag0 ? defaultEdgesOnly(edges0) : [];
       const order0 = hasDag0 ? topoOrder(nodes0, defaultEdges0) : [];
       const steps0: Step[] = hasDag0 ? order0.map((n) => mapDagNodeToStep(n)) : [];
-      const nav = steps0.find((s) => s && s.type === 'navigate');
-      if (nav && typeof (nav as any).url === 'string')
-        derivedStartUrl = expandTemplatesDeep((nav as any).url, {});
-    } catch {}
+      const nav = steps0.find((s) => s.type === STEP_TYPES.NAVIGATE);
+      if (nav && nav.type === STEP_TYPES.NAVIGATE)
+        derivedStartUrl = expandTemplatesDeep(nav.url, {});
+    } catch {
+      // ignore: best-effort derive startUrl
+    }
 
     const ensured = await ensureTab({
       tabTarget: this.options.tabTarget,
@@ -117,14 +132,24 @@ class ExecutionOrchestrator {
       updatedAt: this.startAt,
     });
 
-    await this.pluginManager.runStart({ runId: this.runId, flow: this.flow, vars: this.vars });
+    try {
+      await this.pluginManager.runStart({ runId: this.runId, flow: this.flow, vars: this.vars });
+    } catch (e: any) {
+      this.logger.push({
+        stepId: LOG_STEP_IDS.PLUGIN_RUN_START,
+        status: 'warning',
+        message: e?.message || String(e),
+      });
+    }
 
     // pre-load read_page when on web
     try {
       const u = ensured?.url || '';
       if (/^(https?:|file:)/i.test(u))
         await handleCallTool({ name: TOOL_NAMES.BROWSER.READ_PAGE, args: {} });
-    } catch {}
+    } catch {
+      // ignore: preloading read_page is best-effort
+    }
 
     // overlay variable collection
     try {
@@ -137,7 +162,7 @@ class ExecutionOrchestrator {
         const res = await handleCallTool({
           name: TOOL_NAMES.BROWSER.SEND_COMMAND_TO_INJECT_SCRIPT,
           args: {
-            eventName: 'collectVariables',
+            eventName: TOOL_MESSAGE_TYPES.COLLECT_VARIABLES,
             payload: JSON.stringify({ variables: needed, useOverlay: true }),
           },
         });
@@ -146,22 +171,32 @@ class ExecutionOrchestrator {
           const t = (res?.content || []).find((c: any) => c.type === 'text')?.text;
           const j = t ? JSON.parse(t) : null;
           if (j && j.success && j.values) values = j.values;
-        } catch {}
+        } catch {
+          // ignore: parse result from tool response
+        }
         if (!values) {
           const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
           const tabId = tabs?.[0]?.id;
           if (typeof tabId === 'number') {
             const res2 = await chrome.tabs.sendMessage(tabId, {
-              action: 'collectVariables',
+              action: TOOL_MESSAGE_TYPES.COLLECT_VARIABLES,
               variables: needed,
               useOverlay: true,
-            } as any);
+            });
             if (res2 && res2.success && res2.values) values = res2.values;
           }
         }
         if (values) Object.assign(this.vars, values);
+        else
+          this.logger.push({
+            stepId: LOG_STEP_IDS.VARIABLE_COLLECT,
+            status: 'warning',
+            message: 'Variable collection failed; using provided args/defaults',
+          });
       }
-    } catch {}
+    } catch {
+      // ignore: variable collection is optional
+    }
 
     await this.logger.overlayInit();
 
@@ -176,7 +211,9 @@ class ExecutionOrchestrator {
             if (b.type === 'domain') return new URL(currentUrl).hostname.includes(b.value);
             if (b.type === 'path') return new URL(currentUrl).pathname.startsWith(b.value);
             if (b.type === 'url') return currentUrl.startsWith(b.value);
-          } catch {}
+          } catch {
+            // ignore: URL parsing for binding check
+          }
           return false;
         });
         if (!ok) {
@@ -188,7 +225,7 @@ class ExecutionOrchestrator {
             outputs: null,
             logs: [
               {
-                stepId: 'binding-check',
+                stepId: LOG_STEP_IDS.BINDING_CHECK,
                 status: 'failed',
                 message:
                   'Flow binding mismatch. Provide startUrl or open a page matching flow.meta.bindings.',
@@ -200,7 +237,9 @@ class ExecutionOrchestrator {
           return;
         }
       }
-    } catch {}
+    } catch {
+      // ignore: binding enforcement failures fall back to default behavior
+    }
 
     // network capture start
     if (this.options.captureNetwork) {
@@ -209,12 +248,35 @@ class ExecutionOrchestrator {
           name: TOOL_NAMES.BROWSER.NETWORK_DEBUGGER_START,
           args: { includeStatic: false, maxCaptureTime: 3 * 60_000, inactivityTimeout: 0 },
         });
-        if (!(res as any)?.isError) this.networkCaptureStarted = true;
-      } catch {}
+        let started = false;
+        try {
+          const t = res?.content?.find?.((c: any) => c.type === 'text')?.text;
+          if (t) {
+            const j = JSON.parse(t);
+            started = !!j?.success;
+          }
+        } catch {
+          // ignore: parse network debugger start response
+        }
+        this.networkCaptureStarted = started;
+        if (!started) {
+          this.logger.push({
+            stepId: LOG_STEP_IDS.NETWORK_CAPTURE,
+            status: 'warning',
+            message: 'Failed to confirm network capture start',
+          });
+        }
+      } catch (e: any) {
+        this.logger.push({
+          stepId: LOG_STEP_IDS.NETWORK_CAPTURE,
+          status: 'warning',
+          message: e?.message || 'Network capture start errored',
+        });
+      }
     }
 
     // build DAG steps
-    const hasDag = Array.isArray((this.flow as any).nodes) && (this.flow as any).nodes.length > 0;
+    const hasDag = Array.isArray(this.flow.nodes) && (this.flow.nodes?.length || 0) > 0;
     if (!hasDag) {
       this.prepareError = {
         runId: this.runId,
@@ -224,7 +286,7 @@ class ExecutionOrchestrator {
         outputs: null,
         logs: [
           {
-            stepId: 'dag-required',
+            stepId: LOG_STEP_IDS.DAG_REQUIRED,
             status: 'failed',
             message:
               'Flow has no DAG nodes. Linear steps are no longer supported. Please migrate this flow to nodes/edges.',
@@ -235,156 +297,105 @@ class ExecutionOrchestrator {
       };
       return;
     }
-    const nodes = ((this.flow as any).nodes || []) as any[];
-    const edges = ((this.flow as any).edges || []) as any[];
-    const defaultEdges = defaultEdgesOnly(edges as any);
-    const order = topoOrder(nodes as any, defaultEdges as any);
-    this.steps = order.map((n) => mapDagNodeToStep(n as any));
-  }
-
-  private async executeSingleStep(
-    step: Step,
-    ctx: ExecCtx,
-    appendOverlayOk: (s: Step) => Promise<void> | void,
-    appendOverlayFail: (s: Step, e: any) => Promise<void> | void,
-  ): Promise<{ status: 'success' | 'failed' | 'paused'; nextLabel?: string; control?: any }> {
-    const t0 = Date.now();
-    this.ensureWithinDeadline();
-    const ctrlStart = await this.pluginManager.beforeStep({
-      runId: this.runId,
-      flow: this.flow,
-      vars: this.vars,
-      step,
-    });
-    if (ctrlStart?.pause) return { status: 'paused' };
-    let stepNextLabel: string | undefined;
-    let controlOut: any = undefined;
-    const beforeInfo = await getActiveTabInfo();
+    const nodes: NodeBase[] = (this.flow.nodes || []) as NodeBase[];
+    const edges: Edge[] = (this.flow.edges || []) as Edge[];
+    // Validate DAG for potential cycles on full edge set
     try {
-      await withRetry(
-        async () => {
-          const result: any = await executeStep(ctx, step);
-          if (step.type === 'click' || step.type === 'dblclick') {
-            const after = ((step as any).after || {}) as any;
-            if (after.waitForNavigation)
-              await waitForNavigationDone(beforeInfo.url, (step as any).timeoutMs);
-            else if (after.waitForNetworkIdle)
-              await waitForNetworkIdle(Math.min((step as any).timeoutMs || 5000, 120000), 1200);
-            else await maybeQuickWaitForNav(beforeInfo.url, (step as any).timeoutMs);
-          }
-          if (step.type === 'navigate' || step.type === 'openTab') {
-            await waitForNavigationDone(beforeInfo.url, (step as any).timeoutMs);
-            await ensureReadPageIfWeb();
-          } else if (step.type === 'switchTab') {
-            await ensureReadPageIfWeb();
-          }
-          if (!result?.alreadyLogged)
-            this.logger.push({ stepId: step.id, status: 'success', tookMs: Date.now() - t0 });
-          await this.pluginManager.afterStep({
-            runId: this.runId,
-            flow: this.flow,
-            vars: this.vars,
-            step,
-            result,
-          });
-          await appendOverlayOk(step);
-          if (result?.nextLabel) stepNextLabel = String(result.nextLabel);
-          if (result?.control) controlOut = result.control;
-          if (result?.deferAfterScript) this.pendingAfterScripts.push(result.deferAfterScript);
-          await flushAfterScripts(ctx, this.pendingAfterScripts, this.vars, this.logger);
-        },
-        async (attempt, e) => {
-          this.logger.push({
-            stepId: step.id,
-            status: 'retrying',
-            message: e?.message || String(e),
-          });
-          await this.pluginManager.onRetry({
-            runId: this.runId,
-            flow: this.flow,
-            vars: this.vars,
-            step,
-            error: e,
-            attempt,
-          });
-        },
-        {
-          count: Math.max(0, (step as any).retry?.count ?? 0),
-          intervalMs: Math.max(0, (step as any).retry?.intervalMs ?? 0),
-          backoff: (step as any).retry?.backoff || 'none',
-        },
-      );
-    } catch (e: any) {
-      this.failed++;
-      this.logger.push({
-        stepId: step.id,
-        status: 'failed',
-        message: e?.message || String(e),
-        tookMs: Date.now() - t0,
-      });
-      await appendOverlayFail(step, e);
-      if ((step as any).screenshotOnFail !== false) await this.logger.screenshotOnFailure();
-      const hook = await this.pluginManager.onError({
-        runId: this.runId,
-        flow: this.flow,
-        vars: this.vars,
-        step,
-        error: e,
-      });
-      if (hook?.pause) return { status: 'paused' };
-      return { status: 'failed' };
+      if (this.hasCycle(nodes, edges)) {
+        this.prepareError = {
+          runId: this.runId,
+          success: false,
+          summary: { total: 0, success: 0, failed: 0, tookMs: 0 },
+          url: null,
+          outputs: null,
+          logs: [
+            {
+              stepId: LOG_STEP_IDS.DAG_CYCLE,
+              status: 'failed',
+              message:
+                'Flow DAG contains a cycle. Please break the cycle or add explicit labels/branches to avoid infinite loops.',
+            },
+          ],
+          screenshots: { onFailure: null },
+          paused: false,
+        };
+        return;
+      }
+    } catch {
+      // ignore: cycle detection guard
     }
-    // Propagate control (foreach/while) to caller
-    return { status: 'success', nextLabel: stepNextLabel, control: controlOut };
+    const defaultEdges = defaultEdgesOnly(edges);
+    const order = topoOrder(nodes, defaultEdges);
+    this.steps = order.map((n) => mapDagNodeToStep(n));
+    // initialize runners
+    this.subflowRunner = new SubflowRunner({
+      runId: this.runId,
+      flow: this.flow,
+      vars: this.vars,
+      logger: this.logger,
+      pluginManager: this.pluginManager,
+      stepRunner: this.stepRunner,
+    });
+    this.controlFlowRunner = new ControlFlowRunner({
+      vars: this.vars,
+      logger: this.logger,
+      evalCondition: (c) => this.evalCondition(c),
+      runSubflowById: (id, ctx) => this.subflowRunner.runSubflowById(id, ctx, () => this.paused),
+      isPaused: () => this.paused,
+    });
   }
 
-  private async runSubflowById(subflowId: string, ctx: ExecCtx) {
-    const sub = (this.flow.subflows || {})[subflowId];
-    if (!sub || !Array.isArray(sub.nodes) || sub.nodes.length === 0) return;
-    await this.pluginManager.subflowStart({
-      runId: this.runId,
-      flow: this.flow,
-      vars: this.vars,
-      subflowId,
-    });
-    const sNodes: any[] = sub.nodes;
-    const sEdges: any[] = defaultEdgesOnly((sub.edges || []) as any) as any[];
-    const sOrder = topoOrder(sNodes as any, sEdges as any);
-    const sSteps: Step[] = sOrder.map((n) => mapDagNodeToStep(n as any)) as any;
-    const ok = (s: Step) => this.logger.overlayAppend(`✔ ${s.type} (${s.id})`);
-    const fail = (s: Step, e: any) =>
-      this.logger.overlayAppend(`✘ ${s.type} (${s.id}) -> ${e?.message || String(e)}`);
-    for (const step of sSteps) {
-      this.ensureWithinDeadline();
-      const r = await this.executeSingleStep(step, ctx, ok, fail);
-      if (r.status === 'paused') {
-        this.paused = true;
-        break;
-      }
-      if (this.paused) break;
+  // Basic cycle detection using DFS coloring on the full edge set
+  private hasCycle(
+    nodes: Array<{ id: string }>,
+    edges: Array<{ from: string; to: string }>,
+  ): boolean {
+    const adj = new Map<string, string[]>();
+    for (const n of nodes) adj.set(n.id, []);
+    for (const e of edges) {
+      if (!adj.has(e.from)) adj.set(e.from, []);
+      adj.get(e.from)!.push(e.to);
     }
-    await this.pluginManager.subflowEnd({
-      runId: this.runId,
-      flow: this.flow,
-      vars: this.vars,
-      subflowId,
-    });
+    const color = new Map<string, number>(); // 0=unvisited,1=visiting,2=done
+    const visit = (u: string): boolean => {
+      const c = color.get(u) || 0;
+      if (c === 1) return true; // back-edge
+      if (c === 2) return false;
+      color.set(u, 1);
+      for (const v of adj.get(u) || []) if (visit(v)) return true;
+      color.set(u, 2);
+      return false;
+    };
+    for (const n of nodes) if ((color.get(n.id) || 0) === 0 && visit(n.id)) return true;
+    return false;
   }
 
   private async traverseDag(): Promise<RunResult> {
     if (!this.steps.length) {
       await this.logger.overlayDone();
-      return this.prepareError!;
+      const tookMs0 = Date.now() - this.startAt;
+      return (
+        this.prepareError || {
+          runId: this.runId,
+          success: false,
+          summary: { total: 0, success: 0, failed: 0, tookMs: tookMs0 },
+          url: null,
+          outputs: null,
+          logs: this.options.returnLogs ? this.logger.getLogs() : undefined,
+          screenshots: { onFailure: null },
+          paused: false,
+        }
+      );
     }
-    const nodes = ((this.flow as any).nodes || []) as any[];
-    const edges = ((this.flow as any).edges || []) as any[];
-    const id2node = new Map(nodes.map((n: any) => [n.id, n] as const));
-    const outEdges = new Map<string, Array<any>>();
+    const nodes: NodeBase[] = this.flow.nodes || [];
+    const edges: Edge[] = this.flow.edges || [];
+    const id2node = new Map(nodes.map((n) => [n.id, n] as const));
+    const outEdges = new Map<string, Array<Edge>>();
     for (const e of edges) {
       if (!outEdges.has(e.from)) outEdges.set(e.from, []);
       outEdges.get(e.from)!.push(e);
     }
-    const indeg = new Map<string, number>(nodes.map((n: any) => [n.id, 0] as const));
+    const indeg = new Map<string, number>(nodes.map((n) => [n.id, 0] as const));
     for (const e of edges) indeg.set(e.to, (indeg.get(e.to) || 0) + 1);
     let currentId =
       this.options.startNodeId && id2node.has(this.options.startNodeId)
@@ -392,14 +403,36 @@ class ExecutionOrchestrator {
         : nodes.find((n: any) => (indeg.get(n.id) || 0) === 0)?.id || nodes[0]?.id;
     let guard = 0;
     const ctx: ExecCtx = { vars: this.vars, logger: (e: RunLogEntry) => this.logger.push(e) };
-    while (currentId && guard++ < 10000) {
+    try {
+      await this.logger.overlayAppend(
+        `▶ start at ${id2node.get(currentId)?.type || ''} (${currentId})`,
+      );
+    } catch {
+      // ignore: eval condition failure treated as false
+    }
+    while (currentId) {
       this.ensureWithinDeadline();
+      if (guard++ >= ENGINE_CONSTANTS.MAX_ITERATIONS) {
+        this.logger.push({
+          stepId: LOG_STEP_IDS.LOOP_GUARD,
+          status: 'failed',
+          message: `Exceeded ${ENGINE_CONSTANTS.MAX_ITERATIONS} iterations - possible cycle in DAG`,
+        });
+        this.failed++;
+        break;
+      }
       const node = id2node.get(currentId);
       if (!node) break;
-      const step: any = mapDagNodeToStep(node as any);
-      const r = await this.executeSingleStep(
-        step,
+      const step: Step = mapDagNodeToStep(node);
+      // lightweight trace to aid debugging edge traversal
+      try {
+        await this.logger.overlayAppend(`→ ${step.type} (${step.id})`);
+      } catch {
+        // ignore: stopping network capture is best-effort
+      }
+      const r = await this.stepRunner.run(
         ctx,
+        step,
         (s) => this.logger.overlayAppend(`✔ ${s.type} (${s.id})`),
         (s, e) => this.logger.overlayAppend(`✘ ${s.type} (${s.id}) -> ${e?.message || String(e)}`),
       );
@@ -408,8 +441,9 @@ class ExecutionOrchestrator {
         break;
       }
       if (r.status === 'failed') {
-        const oes = (outEdges.get(currentId) || []) as any[];
-        const errEdge = oes.find((edg) => edg.label === 'onError');
+        this.failed++;
+        const oes = (outEdges.get(currentId) || []) as Edge[];
+        const errEdge = oes.find((edg) => edg.label === ENGINE_CONSTANTS.EDGE_LABELS.ON_ERROR);
         if (errEdge) {
           currentId = errEdge.to;
           continue;
@@ -417,42 +451,26 @@ class ExecutionOrchestrator {
           break;
         }
       }
-      if ((r as any).control) {
-        const control = (r as any).control;
-        if (control?.kind === 'foreach') {
-          const list = Array.isArray(this.vars[control.listVar])
-            ? (this.vars[control.listVar] as any[])
-            : [];
-          for (const it of list) {
-            this.vars[control.itemVar] = it;
-            await this.runSubflowById(control.subflowId, ctx);
-            if (this.paused) break;
-          }
-        } else if (control?.kind === 'while') {
-          let i = 0;
-          while (i < control.maxIterations && this.evalCondition(control.condition)) {
-            await this.runSubflowById(control.subflowId, ctx);
-            if (this.paused) break;
-            i++;
-          }
+      if (r.control) {
+        const control = r.control;
+        const st = await this.controlFlowRunner.run(control, ctx);
+        if (st === 'paused') {
+          this.paused = true;
+          break;
         }
-        if (this.paused) break;
+        const suggested = r.nextLabel ? String(r.nextLabel) : ENGINE_CONSTANTS.EDGE_LABELS.DEFAULT;
+        const next = await this.advanceToNext(currentId, step, suggested, id2node, outEdges);
+        if (!next) break;
+        currentId = next;
+        continue;
       }
       // choose next by label
-      let nextLabel: string = r.nextLabel ? String(r.nextLabel) : 'default';
-      const override = await this.pluginManager.onChooseNextLabel({
-        runId: this.runId,
-        flow: this.flow,
-        vars: this.vars,
-        step,
-        suggested: nextLabel,
-      });
-      if (override) nextLabel = String(override);
-      const oes = (outEdges.get(currentId) || []) as any[];
-      const edge =
-        oes.find((e) => String(e.label || 'default') === nextLabel) ||
-        oes.find((e) => !e.label || e.label === 'default');
-      currentId = edge ? edge.to : undefined;
+      {
+        const suggested = r.nextLabel ? String(r.nextLabel) : ENGINE_CONSTANTS.EDGE_LABELS.DEFAULT;
+        const next = await this.advanceToNext(currentId, step, suggested, id2node, outEdges);
+        if (!next) break;
+        currentId = next;
+      }
     }
     const tookMs = Date.now() - this.startAt;
     const sensitiveKeys = new Set(
@@ -479,21 +497,82 @@ class ExecutionOrchestrator {
     };
   }
 
+  // Advance to next node by suggested label, with overlay/logging and fallback to default edge.
+  private async advanceToNext(
+    currentId: string,
+    step: Step,
+    suggested: string,
+    id2node: Map<string, NodeBase>,
+    outEdges: Map<string, Array<Edge>>,
+  ): Promise<string | undefined> {
+    const nextLabel = await this.chooseNextLabel(step, suggested);
+    const nextId = this.findNextNodeId(currentId, outEdges, nextLabel);
+    if (nextId) {
+      try {
+        await this.logger.overlayAppend(
+          `↪ next(${nextLabel}) → ${id2node.get(nextId)?.type || ''} (${nextId})`,
+        );
+      } catch {}
+      return nextId;
+    }
+    const labels = (outEdges.get(currentId) || []).map((e) =>
+      String(e.label || ENGINE_CONSTANTS.EDGE_LABELS.DEFAULT),
+    );
+    this.logger.push({
+      stepId: step.id,
+      status: 'warning',
+      message: `No next edge for label '${nextLabel}'. Outgoing labels: [${labels.join(', ')}]`,
+    });
+    return undefined;
+  }
+
+  // Decide next label, allowing plugins to override; logs plugin errors as warnings
+  private async chooseNextLabel(step: Step, suggested: string): Promise<string> {
+    try {
+      const override = await this.pluginManager.onChooseNextLabel({
+        runId: this.runId,
+        flow: this.flow,
+        vars: this.vars,
+        step,
+        suggested,
+      });
+      return override ? String(override) : suggested;
+    } catch (e: any) {
+      this.logger.push({
+        stepId: step.id,
+        status: 'warning',
+        message: `plugin.onChooseNextLabel error: ${e?.message || String(e)}`,
+      });
+      return suggested;
+    }
+  }
+
+  // From current node and label, pick next nodeId using outEdges; prefers labeled edge then default
+  private findNextNodeId(
+    currentId: string,
+    outEdges: Map<string, Array<Edge>>,
+    nextLabel: string,
+  ): string | undefined {
+    const oes = (outEdges.get(currentId) || []) as Edge[];
+    const edge =
+      oes.find((e) => String(e.label || ENGINE_CONSTANTS.EDGE_LABELS.DEFAULT) === nextLabel) ||
+      oes.find((e) => !e.label || e.label === ENGINE_CONSTANTS.EDGE_LABELS.DEFAULT);
+    return edge ? edge.to : undefined;
+  }
+
   private evalCondition(cond: any): boolean {
     try {
       if (cond && typeof cond.expression === 'string' && cond.expression.trim()) {
-        const fn = new Function(
-          'vars',
-          `try { return !!(${cond.expression}); } catch (e) { return false; }`,
-        );
-        return !!fn(this.vars);
+        return !!evalExpression(String(cond.expression), { vars: this.vars });
       }
       if (cond && typeof cond.var === 'string') {
         const v = this.vars[cond.var];
         if ('equals' in cond) return String(v) === String(cond.equals);
         return !!v;
       }
-    } catch {}
+    } catch {
+      // ignore: cleanup guard
+    }
     return false;
   }
 
@@ -506,41 +585,73 @@ class ExecutionOrchestrator {
         });
         const text = (stopRes?.content || []).find((c: any) => c.type === 'text')?.text;
         if (text) {
-          const data = JSON.parse(text);
-          const requests: any[] = Array.isArray(data?.requests) ? data.requests : [];
-          const snippets = requests
-            .filter((r) => ['XHR', 'Fetch'].includes(String(r.type)))
-            .slice(0, 10)
-            .map((r) => ({
-              method: String(r.method || 'GET'),
-              url: String(r.url || ''),
-              status: r.statusCode || r.status,
-              ms: Math.max(0, (r.responseTime || 0) - (r.requestTime || 0)),
-            }));
-          this.logger.push({
-            stepId: 'network-capture',
-            status: 'success',
-            message: `Captured ${Number(data?.requestCount || 0)} requests` as any,
-            networkSnippets: snippets,
-          } as any);
+          try {
+            const data = JSON.parse(text);
+            const requests: any[] = Array.isArray(data?.requests) ? data.requests : [];
+            const snippets = requests
+              .filter((r) => ['XHR', 'Fetch'].includes(String(r.type)))
+              .slice(0, 10)
+              .map((r) => ({
+                method: String(r.method || 'GET'),
+                url: String(r.url || ''),
+                status: r.statusCode || r.status,
+                ms: Math.max(0, (r.responseTime || 0) - (r.requestTime || 0)),
+              }));
+            this.logger.push({
+              stepId: LOG_STEP_IDS.NETWORK_CAPTURE,
+              status: 'success',
+              message: `Captured ${Number(data?.requestCount || 0)} requests`,
+              networkSnippets: snippets,
+            });
+          } catch (e: any) {
+            this.logger.push({
+              stepId: LOG_STEP_IDS.NETWORK_CAPTURE,
+              status: 'warning',
+              message: `Failed parsing network capture result: ${e?.message || String(e)}`,
+            });
+          }
         }
       } catch {}
     }
     await this.logger.overlayDone();
     try {
-      await this.pluginManager.runEnd({
-        runId: this.runId,
-        flow: this.flow,
-        vars: this.vars,
-        success: this.failed === 0 && !this.paused,
-        failed: this.failed,
-      });
+      try {
+        await this.pluginManager.runEnd({
+          runId: this.runId,
+          flow: this.flow,
+          vars: this.vars,
+          success: this.failed === 0 && !this.paused,
+          failed: this.failed,
+        });
+      } catch (e: any) {
+        this.logger.push({
+          stepId: LOG_STEP_IDS.PLUGIN_RUN_END,
+          status: 'warning',
+          message: e?.message || String(e),
+        });
+      }
       if (!this.paused) await this.logger.persist(this.flow, this.startAt, this.failed === 0);
-      await runState.update(this.runId, {
-        status: this.paused ? 'stopped' : this.failed === 0 ? 'completed' : 'failed',
-        updatedAt: Date.now(),
-      } as any);
-      if (!this.paused) await runState.delete(this.runId);
+      try {
+        await runState.update(this.runId, {
+          status: this.paused ? 'stopped' : this.failed === 0 ? 'completed' : 'failed',
+          updatedAt: Date.now(),
+        });
+      } catch (e: any) {
+        this.logger.push({
+          stepId: LOG_STEP_IDS.RUNSTATE_UPDATE,
+          status: 'warning',
+          message: e?.message || String(e),
+        });
+      }
+      try {
+        if (!this.paused) await runState.delete(this.runId);
+      } catch (e: any) {
+        this.logger.push({
+          stepId: LOG_STEP_IDS.RUNSTATE_DELETE,
+          status: 'warning',
+          message: e?.message || String(e),
+        });
+      }
     } catch {}
   }
 }
@@ -548,46 +659,4 @@ class ExecutionOrchestrator {
 export async function runFlow(flow: Flow, options: RunOptions = {}): Promise<RunResult> {
   const orchestrator = new ExecutionOrchestrator(flow, options);
   return await orchestrator.run();
-}
-
-async function getActiveTabInfo() {
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  const tab = tabs[0];
-  return { url: tab?.url || '', status: (tab as any)?.status || '' };
-}
-
-async function flushAfterScripts(
-  ctx: ExecCtx,
-  pendingAfterScripts: StepScript[],
-  vars: Record<string, any>,
-  logger: RunLogger,
-) {
-  if (pendingAfterScripts.length === 0) return;
-  while (pendingAfterScripts.length) {
-    const s = pendingAfterScripts.shift()!;
-    const tScript = Date.now();
-    const world = (s as any).world || 'ISOLATED';
-    const code = String((s as any).code || '');
-    if (code.trim()) {
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      const tabId = tabs?.[0]?.id;
-      if (typeof tabId !== 'number') throw new Error('Active tab not found');
-      const [{ result }] = await chrome.scripting.executeScript({
-        target: { tabId },
-        func: (userCode: string) => {
-          try {
-            return (0, eval)(userCode);
-          } catch {
-            return null;
-          }
-        },
-        args: [code],
-        world: world as any,
-      } as any);
-      if ((s as any).saveAs) (vars as any)[(s as any).saveAs] = result;
-      if ((s as any).assign && typeof (s as any).assign === 'object')
-        applyAssign(vars, result, (s as any).assign);
-    }
-    logger.push({ stepId: s.id, status: 'success', tookMs: Date.now() - tScript });
-  }
 }

@@ -11,7 +11,7 @@ export interface ExecResult {
   deferAfterScript?: StepScript | null;
   nextLabel?: string;
   control?:
-    | { kind: 'foreach'; listVar: string; itemVar: string; subflowId: string }
+    | { kind: 'foreach'; listVar: string; itemVar: string; subflowId: string; concurrency?: number }
     | { kind: 'while'; condition: any; subflowId: string; maxIterations: number };
 }
 

@@ -1,5 +1,6 @@
 // rr-graph.ts — shared DAG helpers for Record & Replay
 // Note: keep types lightweight to avoid cross-package coupling
+// Centralize step type strings and tiny helpers here to avoid magic literals.
 
 export interface RRNode {
   id: string;
@@ -11,6 +12,42 @@ export interface RREdge {
   from: string;
   to: string;
   label?: 'default' | 'true' | 'false' | 'onError';
+}
+
+// Centralized step type strings (kept in shared to avoid duplication)
+export const RR_STEP_TYPES = {
+  CLICK: 'click',
+  DBLCLICK: 'dblclick',
+  FILL: 'fill',
+  DRAG: 'drag',
+  KEY: 'key',
+  WAIT: 'wait',
+  ASSERT: 'assert',
+  IF: 'if',
+  FOREACH: 'foreach',
+  WHILE: 'while',
+  NAVIGATE: 'navigate',
+  SCRIPT: 'script',
+  HTTP: 'http',
+  EXTRACT: 'extract',
+  SCREENSHOT: 'screenshot',
+  SCROLL: 'scroll',
+  TRIGGER_EVENT: 'triggerEvent',
+  SET_ATTRIBUTE: 'setAttribute',
+  LOOP_ELEMENTS: 'loopElements',
+  SWITCH_FRAME: 'switchFrame',
+  OPEN_TAB: 'openTab',
+  SWITCH_TAB: 'switchTab',
+  CLOSE_TAB: 'closeTab',
+  EXECUTE_FLOW: 'executeFlow',
+  HANDLE_DOWNLOAD: 'handleDownload',
+  // UI-only, mapped to WAIT
+  DELAY: 'delay',
+} as const;
+export type RRStepType = (typeof RR_STEP_TYPES)[keyof typeof RR_STEP_TYPES];
+
+function ensureTarget(t: any) {
+  return t && typeof t === 'object' ? t : { candidates: [] };
 }
 
 // Topological order using Kahn's algorithm; edges considered as-is (caller may pre-filter labels)
@@ -39,76 +76,98 @@ export function topoOrder<T extends RRNode>(nodes: T[], edges: RREdge[]): T[] {
 export function mapNodeToStep(node: RRNode): any {
   const c: any = node.config || {};
   const base = { id: node.id } as any;
+  // Config-driven generic mapping (prefer this path)
+  try {
+    const type = String(node.type);
+    // UI-only helper: delay -> wait.sleep
+    if (type === 'delay') {
+      const sleep = Number((c as any).sleep ?? (c as any).ms ?? 1000);
+      return { ...base, type: 'wait', condition: { sleep: Math.max(0, sleep) } };
+    }
+    const step: any = { ...base, type, ...c };
+    if (step.target) step.target = ensureTarget(step.target);
+    if (step.start) step.start = ensureTarget(step.start);
+    if (step.end) step.end = ensureTarget(step.end);
+    return step;
+  } catch {}
   switch (node.type) {
-    case 'click':
-    case 'dblclick':
+    case RR_STEP_TYPES.CLICK:
+    case RR_STEP_TYPES.DBLCLICK:
       return {
         ...base,
         type: node.type,
-        target: c.target || { candidates: [] },
+        target: ensureTarget(c.target),
         before: c.before,
         after: c.after,
       };
-    case 'fill':
+    case RR_STEP_TYPES.FILL:
       return {
         ...base,
-        type: 'fill',
-        target: c.target || { candidates: [] },
+        type: RR_STEP_TYPES.FILL,
+        target: ensureTarget(c.target),
         value: c.value || '',
       };
-    case 'drag':
+    case RR_STEP_TYPES.DRAG:
       return {
         ...base,
-        type: 'drag',
-        start: c.start || { candidates: [] },
-        end: c.end || { candidates: [] },
+        type: RR_STEP_TYPES.DRAG,
+        start: ensureTarget(c.start),
+        end: ensureTarget(c.end),
         path: Array.isArray(c.path) ? c.path : undefined,
       };
-    case 'key':
-      return { ...base, type: 'key', keys: c.keys || '' };
-    case 'wait':
-      return { ...base, type: 'wait', condition: c.condition || { text: '', appear: true } };
-    case 'assert':
+    case RR_STEP_TYPES.KEY:
+      return { ...base, type: RR_STEP_TYPES.KEY, keys: c.keys || '' };
+    case RR_STEP_TYPES.WAIT:
       return {
         ...base,
-        type: 'assert',
+        type: RR_STEP_TYPES.WAIT,
+        condition: c.condition || { text: '', appear: true },
+      };
+    case RR_STEP_TYPES.ASSERT:
+      return {
+        ...base,
+        type: RR_STEP_TYPES.ASSERT,
         assert: c.assert || { exists: '' },
         failStrategy: c.failStrategy,
       };
-    case 'if':
-      return { ...base, type: 'if', condition: c.condition || {} };
-    case 'foreach':
+    case RR_STEP_TYPES.IF:
+      return { ...base, type: RR_STEP_TYPES.IF, condition: c.condition || {} };
+    case RR_STEP_TYPES.FOREACH:
       return {
         ...base,
-        type: 'foreach',
+        type: RR_STEP_TYPES.FOREACH,
         listVar: c.listVar || '',
         itemVar: c.itemVar || 'item',
         subflowId: c.subflowId || '',
       };
-    case 'while':
+    case RR_STEP_TYPES.WHILE:
       return {
         ...base,
-        type: 'while',
+        type: RR_STEP_TYPES.WHILE,
         condition: c.condition || {},
         subflowId: c.subflowId || '',
         maxIterations: Math.max(0, Number(c.maxIterations ?? 100)),
       };
-    case 'navigate':
-      return { ...base, type: 'navigate', url: c.url || '' };
-    case 'script':
+    case RR_STEP_TYPES.NAVIGATE:
+      return { ...base, type: RR_STEP_TYPES.NAVIGATE, url: c.url || '' };
+    case RR_STEP_TYPES.SCRIPT:
       return {
         ...base,
-        type: 'script',
+        type: RR_STEP_TYPES.SCRIPT,
         world: c.world || 'ISOLATED',
         code: c.code || '',
         when: c.when,
       };
-    case 'delay': // map to wait.sleep to avoid navigation confusion
-      return { ...base, type: 'wait', condition: { sleep: Math.max(0, Number(c.ms ?? 1000)) } };
-    case 'http':
+    case RR_STEP_TYPES.DELAY: // map to wait.sleep to avoid navigation confusion
       return {
         ...base,
-        type: 'http',
+        type: RR_STEP_TYPES.WAIT,
+        condition: { sleep: Math.max(0, Number(c.ms ?? 1000)) },
+      };
+    case RR_STEP_TYPES.HTTP:
+      return {
+        ...base,
+        type: RR_STEP_TYPES.HTTP,
         method: c.method || 'GET',
         url: c.url || '',
         headers: c.headers || {},
@@ -116,103 +175,103 @@ export function mapNodeToStep(node: RRNode): any {
         formData: c.formData,
         saveAs: c.saveAs || '',
       };
-    case 'extract':
+    case RR_STEP_TYPES.EXTRACT:
       return {
         ...base,
-        type: 'extract',
+        type: RR_STEP_TYPES.EXTRACT,
         selector: c.selector || '',
         attr: c.attr || 'text',
         js: c.js || '',
         saveAs: c.saveAs || '',
       };
-    case 'screenshot':
+    case RR_STEP_TYPES.SCREENSHOT:
       return {
         ...base,
-        type: 'screenshot',
+        type: RR_STEP_TYPES.SCREENSHOT,
         selector: c.selector || '',
         fullPage: !!c.fullPage,
         saveAs: c.saveAs || '',
       };
-    case 'scroll':
+    case RR_STEP_TYPES.SCROLL:
       return {
         ...base,
-        type: 'scroll',
+        type: RR_STEP_TYPES.SCROLL,
         mode: c.mode || 'offset',
-        target: c.target || { candidates: [] },
+        target: ensureTarget(c.target),
         offset: c.offset || { x: 0, y: 300 },
       };
-    case 'triggerEvent':
+    case RR_STEP_TYPES.TRIGGER_EVENT:
       return {
         ...base,
-        type: 'triggerEvent',
-        target: c.target || { candidates: [] },
+        type: RR_STEP_TYPES.TRIGGER_EVENT,
+        target: ensureTarget(c.target),
         event: c.event || 'input',
         bubbles: c.bubbles !== false,
         cancelable: !!c.cancelable,
       };
-    case 'setAttribute':
+    case RR_STEP_TYPES.SET_ATTRIBUTE:
       return {
         ...base,
-        type: 'setAttribute',
-        target: c.target || { candidates: [] },
+        type: RR_STEP_TYPES.SET_ATTRIBUTE,
+        target: ensureTarget(c.target),
         name: c.name || '',
         value: c.value,
         remove: !!c.remove,
       };
-    case 'loopElements':
+    case RR_STEP_TYPES.LOOP_ELEMENTS:
       return {
         ...base,
-        type: 'loopElements',
+        type: RR_STEP_TYPES.LOOP_ELEMENTS,
         selector: c.selector || '',
         saveAs: c.saveAs || 'elements',
         itemVar: c.itemVar || 'item',
         subflowId: c.subflowId || '',
       };
-    case 'switchFrame':
+    case RR_STEP_TYPES.SWITCH_FRAME:
       return {
         ...base,
-        type: 'switchFrame',
+        type: RR_STEP_TYPES.SWITCH_FRAME,
         frame: {
           index: c.frame && c.frame.index != null ? Number(c.frame.index) : undefined,
           urlContains: c.frame?.urlContains || '',
         },
       };
-    case 'openTab':
-      return { ...base, type: 'openTab', url: c.url || '', newWindow: !!c.newWindow };
-    case 'switchTab':
+    case RR_STEP_TYPES.OPEN_TAB:
+      return { ...base, type: RR_STEP_TYPES.OPEN_TAB, url: c.url || '', newWindow: !!c.newWindow };
+    case RR_STEP_TYPES.SWITCH_TAB:
       return {
         ...base,
-        type: 'switchTab',
+        type: RR_STEP_TYPES.SWITCH_TAB,
         tabId: c.tabId || undefined,
         urlContains: c.urlContains || '',
         titleContains: c.titleContains || '',
       };
-    case 'closeTab':
+    case RR_STEP_TYPES.CLOSE_TAB:
       return {
         ...base,
-        type: 'closeTab',
+        type: RR_STEP_TYPES.CLOSE_TAB,
         tabIds: Array.isArray(c.tabIds) ? c.tabIds : undefined,
         url: c.url || '',
       };
-    case 'executeFlow':
+    case RR_STEP_TYPES.EXECUTE_FLOW:
       return {
         ...base,
-        type: 'executeFlow',
+        type: RR_STEP_TYPES.EXECUTE_FLOW,
         flowId: c.flowId || '',
         inline: c.inline !== false,
         args: c.args || {},
       };
-    case 'handleDownload':
+    case RR_STEP_TYPES.HANDLE_DOWNLOAD:
       return {
         ...base,
-        type: 'handleDownload',
+        type: RR_STEP_TYPES.HANDLE_DOWNLOAD,
         filenameContains: c.filenameContains || '',
         waitForComplete: c.waitForComplete !== false,
         timeoutMs: Math.max(0, Number(c.timeoutMs ?? 60000)),
         saveAs: c.saveAs || '',
       };
     default:
-      return { ...base, type: 'script', world: 'ISOLATED', code: '' };
+      return { ...base, type: RR_STEP_TYPES.SCRIPT, world: 'ISOLATED', code: '' };
   }
 }
 
@@ -223,27 +282,40 @@ export function nodesToSteps(nodes: RRNode[], edges: RREdge[]): any[] {
 
 // Reverse mapping (Step -> Node config)
 export function mapStepToNodeConfig(s: any): any {
+  // Config-driven generic reverse mapping (prefer this path)
+  try {
+    const out: any = {};
+    for (const [k, v] of Object.entries(s || {})) {
+      if (k === 'id' || k === 'type') continue;
+      out[k] = v as any;
+    }
+    if (out.target) out.target = ensureTarget(out.target);
+    if (out.start) out.start = ensureTarget(out.start);
+    if (out.end) out.end = ensureTarget(out.end);
+    return out;
+  } catch {}
   const t = s?.type;
   const base: any = {
     ...(typeof s?.timeoutMs === 'number' ? { timeoutMs: s.timeoutMs } : {}),
     ...(s?.retry ? { retry: s.retry } : {}),
     ...(typeof s?.screenshotOnFail === 'boolean' ? { screenshotOnFail: s.screenshotOnFail } : {}),
   };
-  if (t === 'click' || t === 'dblclick')
-    return { ...base, target: s.target || { candidates: [] }, after: s.after, before: s.before };
-  if (t === 'fill')
-    return { ...base, target: s.target || { candidates: [] }, value: s.value || '' };
-  if (t === 'wait') return { ...base, condition: s.condition || { text: '', appear: true } };
-  if (t === 'assert')
+  if (t === RR_STEP_TYPES.CLICK || t === RR_STEP_TYPES.DBLCLICK)
+    return { ...base, target: ensureTarget(s.target), after: s.after, before: s.before };
+  if (t === RR_STEP_TYPES.FILL)
+    return { ...base, target: ensureTarget(s.target), value: s.value || '' };
+  if (t === RR_STEP_TYPES.WAIT)
+    return { ...base, condition: s.condition || { text: '', appear: true } };
+  if (t === RR_STEP_TYPES.ASSERT)
     return { ...base, assert: s.assert || { exists: '' }, failStrategy: s.failStrategy };
-  if (t === 'navigate') return { ...base, url: s.url || '' };
-  if (t === 'script')
+  if (t === RR_STEP_TYPES.NAVIGATE) return { ...base, url: s.url || '' };
+  if (t === RR_STEP_TYPES.SCRIPT)
     return { ...base, world: s.world || 'ISOLATED', code: s.code || '', when: s.when };
-  if (t === 'executeFlow')
+  if (t === RR_STEP_TYPES.EXECUTE_FLOW)
     return { ...base, flowId: s.flowId || '', inline: s.inline !== false, args: s.args || {} };
-  if (t === 'if') return { ...base, condition: s.condition || {} };
-  if (t === 'key') return { ...base, keys: s.keys || '' };
-  if (t === 'http')
+  if (t === RR_STEP_TYPES.IF) return { ...base, condition: s.condition || {} };
+  if (t === RR_STEP_TYPES.KEY) return { ...base, keys: s.keys || '' };
+  if (t === RR_STEP_TYPES.HTTP)
     return {
       ...base,
       method: s.method || 'GET',
@@ -253,7 +325,7 @@ export function mapStepToNodeConfig(s: any): any {
       formData: s.formData,
       saveAs: s.saveAs || '',
     };
-  if (t === 'extract')
+  if (t === RR_STEP_TYPES.EXTRACT)
     return {
       ...base,
       selector: s.selector || '',
@@ -261,19 +333,17 @@ export function mapStepToNodeConfig(s: any): any {
       js: s.js || '',
       saveAs: s.saveAs || '',
     };
-  if (t === 'openTab') return { ...base, url: s.url || '', newWindow: !!s.newWindow };
-  if (t === 'switchTab')
+  if (t === RR_STEP_TYPES.OPEN_TAB) return { ...base, url: s.url || '', newWindow: !!s.newWindow };
+  if (t === RR_STEP_TYPES.SWITCH_TAB)
     return {
       ...base,
       tabId: s.tabId || undefined,
       urlContains: s.urlContains || '',
       titleContains: s.titleContains || '',
     };
-  if (t === 'closeTab')
+  if (t === RR_STEP_TYPES.CLOSE_TAB)
     return { ...base, tabIds: Array.isArray(s.tabIds) ? s.tabIds : undefined, url: s.url || '' };
-  if (t === 'executeFlow')
-    return { ...base, flowId: s.flowId || '', inline: s.inline !== false, args: s.args || {} };
-  if (t === 'handleDownload')
+  if (t === RR_STEP_TYPES.HANDLE_DOWNLOAD)
     return {
       ...base,
       filenameContains: s.filenameContains || '',
@@ -281,39 +351,39 @@ export function mapStepToNodeConfig(s: any): any {
       timeoutMs: Math.max(0, Number(s.timeoutMs ?? 60000)),
       saveAs: s.saveAs || '',
     };
-  if (t === 'screenshot')
+  if (t === RR_STEP_TYPES.SCREENSHOT)
     return { ...base, selector: s.selector || '', fullPage: !!s.fullPage, saveAs: s.saveAs || '' };
-  if (t === 'scroll')
+  if (t === RR_STEP_TYPES.SCROLL)
     return {
       ...base,
       mode: s.mode || 'offset',
-      target: s.target || { candidates: [] },
+      target: ensureTarget(s.target),
       offset: s.offset || { x: 0, y: 300 },
     };
-  if (t === 'drag')
+  if (t === RR_STEP_TYPES.DRAG)
     return {
       ...base,
-      start: s.start || { candidates: [] },
-      end: s.end || { candidates: [] },
+      start: ensureTarget(s.start),
+      end: ensureTarget(s.end),
       path: Array.isArray(s.path) ? s.path : [],
     };
-  if (t === 'triggerEvent')
+  if (t === RR_STEP_TYPES.TRIGGER_EVENT)
     return {
       ...base,
-      target: s.target || { candidates: [] },
+      target: ensureTarget(s.target),
       event: s.event || 'input',
       bubbles: s.bubbles !== false,
       cancelable: !!s.cancelable,
     };
-  if (t === 'setAttribute')
+  if (t === RR_STEP_TYPES.SET_ATTRIBUTE)
     return {
       ...base,
-      target: s.target || { candidates: [] },
+      target: ensureTarget(s.target),
       name: s.name || '',
       value: s.value,
       remove: !!s.remove,
     };
-  if (t === 'loopElements')
+  if (t === RR_STEP_TYPES.LOOP_ELEMENTS)
     return {
       ...base,
       selector: s.selector || '',
@@ -321,7 +391,7 @@ export function mapStepToNodeConfig(s: any): any {
       itemVar: s.itemVar || 'item',
       subflowId: s.subflowId || '',
     };
-  if (t === 'switchFrame')
+  if (t === RR_STEP_TYPES.SWITCH_FRAME)
     return {
       ...base,
       frame: {

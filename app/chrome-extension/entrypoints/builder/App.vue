@@ -140,7 +140,7 @@
         v-if="activeNode"
         class="floating-property"
         :node="activeNode"
-        :variables="store.flowLocal.variables || []"
+        :variables="availableVars"
         :highlight-field="highlightField"
         :subflow-ids="store.listSubflowIds()"
         @remove-node="store.removeNode"
@@ -347,6 +347,9 @@ const selectedEdgeId = computed<string | null>(() => (store.activeEdgeId as any)
 const activeNode = computed(() => store.nodes.find((n) => n.id === selectedId.value) || null);
 const activeEdge = computed(() => store.edges.find((e) => e.id === selectedEdgeId.value) || null);
 const validation = computed(() => validateFlow(store.nodes));
+
+// Available variables for the currently selected node (global + previous node outputs)
+const availableVars = computed(() => store.listAvailableVariables(selectedId.value || undefined));
 
 const search = ref('');
 const focusNodeId = ref<string | null>(null);

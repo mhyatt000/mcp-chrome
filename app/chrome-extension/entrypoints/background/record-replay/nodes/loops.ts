@@ -1,4 +1,5 @@
 import type { ExecCtx, ExecResult, NodeRuntime } from './types';
+import { ENGINE_CONSTANTS } from '../engine/constants';
 
 export const foreachNode: NodeRuntime<any> = {
   validate: (step) => {
@@ -16,6 +17,10 @@ export const foreachNode: NodeRuntime<any> = {
         listVar: String(s.listVar),
         itemVar,
         subflowId: String(s.subflowId),
+        concurrency: Math.max(
+          1,
+          Math.min(ENGINE_CONSTANTS.MAX_FOREACH_CONCURRENCY, Number(s.concurrency ?? 1)),
+        ),
       },
     } as ExecResult;
   },

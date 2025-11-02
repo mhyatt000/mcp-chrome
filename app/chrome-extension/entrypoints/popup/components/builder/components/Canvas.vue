@@ -22,7 +22,7 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, watch, watchEffect } from 'vue';
+import { ref, watch, watchEffect, markRaw } from 'vue';
 import {
   VueFlow,
   type Node as VFNode,
@@ -40,6 +40,7 @@ import type { NodeBase, Edge as EdgeV2 } from '@/entrypoints/background/record-r
 import NodeCard from './nodes/NodeCard.vue';
 import NodeIf from './nodes/NodeIf.vue';
 import { NODE_UI_LIST, canvasTypeKey } from '@/entrypoints/popup/components/builder/model/ui-nodes';
+import { EDGE_LABELS } from 'chrome-mcp-shared';
 
 const props = defineProps<{
   nodes: NodeBase[];
@@ -71,7 +72,9 @@ const nodeTypes = (() => {
   for (const n of NODE_UI_LIST) {
     const key = canvasTypeKey(n.type);
     // fallback: if a type doesn't specify a special canvas component, use NodeCard/NodeIf
-    base[key] = n.canvas || (n.type === 'if' ? (NodeIf as any) : (NodeCard as any));
+    const comp = n.canvas || (n.type === 'if' ? (NodeIf as any) : (NodeCard as any));
+    // Avoid making component instances reactive; VueFlow expects raw component refs
+    base[key] = markRaw(comp);
   }
   return base;
 })();
@@ -98,9 +101,9 @@ watchEffect(() => {
   const list = props.edges || [];
   const textFor = (lab?: string) => {
     const l = lab || 'default';
-    if (l === 'true') return '✓';
-    if (l === 'false') return '✗';
-    if (l === 'onError') return '!';
+    if (l === EDGE_LABELS.TRUE) return '✓';
+    if (l === EDGE_LABELS.FALSE) return '✗';
+    if (l === EDGE_LABELS.ON_ERROR) return '!';
     return '';
   };
   const labelFor = (e: any) => {

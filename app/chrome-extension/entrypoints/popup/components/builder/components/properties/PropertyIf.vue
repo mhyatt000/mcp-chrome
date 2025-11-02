@@ -14,10 +14,11 @@
           <button class="btn-icon-sm danger" @click="removeIfCase(i)" title="删除">×</button>
         </div>
         <div class="if-case-expr">
-          <input
-            class="form-input"
+          <VarInput
             v-model="c.expr"
-            :placeholder="'workflow.' + (variables?.[0]?.key || 'var') + ' == 5'"
+            :variables="variablesNormalized"
+            format="workflowDot"
+            :placeholder="'workflow.' + (variablesNormalized[0]?.key || 'var') + ' == 5'"
           />
           <div class="if-toolbar">
             <select
@@ -52,7 +53,12 @@ import { computed } from 'vue';
 import type { NodeBase } from '@/entrypoints/background/record-replay/types';
 import { newId } from '@/entrypoints/popup/components/builder/model/transforms';
 
+import VarInput from '@/entrypoints/popup/components/builder/widgets/VarInput.vue';
+import type { VariableOption } from '@/entrypoints/popup/components/builder/model/variables';
 const props = defineProps<{ node: NodeBase; variables?: Array<{ key: string }> }>();
+const variablesNormalized = computed<VariableOption[]>(() =>
+  (props.variables || []).map((v) => ({ key: v.key, origin: 'global' }) as VariableOption),
+);
 
 const ops = ['==', '!=', '>', '>=', '<', '<=', '&&', '||'];
 const ifBranches = computed<Array<{ id: string; name?: string; expr: string }>>({
