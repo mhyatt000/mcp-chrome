@@ -42,7 +42,9 @@ export function initBrowserEventListeners(session: RecordingSessionManager): voi
           t === 'typed' ||
           t === 'generated' ||
           t === 'auto_bookmark' ||
-          t === 'keyword';
+          t === 'keyword' ||
+          // include form_submit to better capture Enter-to-search navigations
+          t === 'form_submit';
         if (shouldRecord) {
           const tab = await chrome.tabs.get(tabId);
           const url = tab.url || details.url;

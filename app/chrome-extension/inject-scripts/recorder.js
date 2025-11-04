@@ -9,7 +9,8 @@
   // 1) CONFIG + STATELESS HELPERS (namespaced)
   // ================================================================
   const CONFIG = {
-    INPUT_DEBOUNCE_MS: 500,
+    // Increase debounce to improve step merging for slow/DOM-replacing inputs
+    INPUT_DEBOUNCE_MS: 800,
     BATCH_SEND_MS: 100,
     SCROLL_DEBOUNCE_MS: 350,
     SENSITIVE_INPUT_TYPES: new Set(['password']),
@@ -62,7 +63,16 @@
       const priority = ['attr', 'css'];
       for (const p of priority) {
         const c = candidates.find((c) => c.type === p);
-        if (c) return c.value;
+        if (c) {
+          try {
+            const tag = el.tagName ? el.tagName.toLowerCase() : '';
+            if (p === 'attr' && (tag === 'input' || tag === 'textarea' || tag === 'select')) {
+              const val = String(c.value || '').trim();
+              if (val.startsWith('[')) return `${tag}${val}`;
+            }
+          } catch {}
+          return c.value;
+        }
       }
       if (candidates.length) return candidates[0].value;
       return SelectorEngine._generateSelector(el) || '';
@@ -143,6 +153,22 @@
       __cachePath.set(el, res);
       return res;
     },
+  };
+  // Extend SelectorEngine with a shared ref helper (attached after declaration)
+  SelectorEngine._ensureGlobalRef = function (el) {
+    try {
+      if (!window.__claudeElementMap) window.__claudeElementMap = {};
+      if (!window.__claudeRefCounter) window.__claudeRefCounter = 0;
+      for (const k in window.__claudeElementMap) {
+        const w = window.__claudeElementMap[k];
+        if (w && typeof w.deref === 'function' && w.deref() === el) return k;
+      }
+      const id = `ref_${++window.__claudeRefCounter}`;
+      window.__claudeElementMap[id] = new WeakRef(el);
+      return id;
+    } catch {
+      return null;
+    }
   };
 
   // ================================================================
@@ -389,6 +415,7 @@
       // Bind handlers
       this._onClick = this._onClick.bind(this);
       this._onInput = this._onInput.bind(this);
+      this._onDocInput = this._onDocInput.bind(this);
       this._onChange = this._onChange.bind(this);
       this._onMouseMove = this._onMouseMove.bind(this);
       this._onScroll = this._onScroll.bind(this);
@@ -466,6 +493,9 @@
       // Use focusin/out to attach input listener only to focused element
       document.addEventListener('focusin', this._onFocusIn, true);
       document.addEventListener('focusout', this._onFocusOut, true);
+      // Document-level input capture to support Shadow DOM (custom elements)
+      // Use capture phase + composedPath to find inner editable control
+      document.addEventListener('input', this._onDocInput, true);
       document.addEventListener('change', this._onChange, true);
       // capture-phase scroll to catch non-bubbling events on any container (passive to avoid jank)
       document.addEventListener('scroll', this._onScroll, { capture: true, passive: true });
@@ -481,6 +511,7 @@
       document.removeEventListener('click', this._onClick, true);
       document.removeEventListener('focusin', this._onFocusIn, true);
       document.removeEventListener('focusout', this._onFocusOut, true);
+      document.removeEventListener('input', this._onDocInput, true);
       document.removeEventListener('change', this._onChange, true);
       document.removeEventListener('scroll', this._onScroll, { capture: true });
       document.removeEventListener('keydown', this._onKeyDown, true);
@@ -611,6 +642,10 @@
         }
       } catch {}
       const target = SelectorEngine.buildTarget(el);
+      try {
+        const gref = SelectorEngine._ensureGlobalRef && SelectorEngine._ensureGlobalRef(el);
+        if (gref) target.ref = gref;
+      } catch {}
       this._pushStep({
         type: e.detail >= 2 ? 'dblclick' : 'click',
         target,
@@ -618,22 +653,76 @@
       });
     }
 
+    // Per-element input handler (attached on focusin for native inputs/textarea)
     _onInput(e) {
       if (!this.isRecording || this.isPaused) return;
+      // Avoid mid-composition spam (IME): handle final committed value
+      try {
+        if (e && typeof e.isComposing === 'boolean' && e.isComposing) return;
+      } catch {}
       const el =
         e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
           ? e.target
           : null;
       if (!el) return;
+      this._handleInputForElement(el);
+    }
+
+    // Document-level input handler: supports composed events from Shadow DOM (custom elements)
+    _onDocInput(e) {
+      if (!this.isRecording || this.isPaused) return;
+      try {
+        if (e && typeof e.isComposing === 'boolean' && e.isComposing) return;
+      } catch {}
+      // Avoid double handling when per-element listener already attached to same element
+      if (this._focusedEl && e.target === this._focusedEl) return;
+      // Find the innermost editable element from composedPath
+      const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+      let el = null;
+      for (let i = 0; i < path.length; i++) {
+        const n = path[i];
+        if (n instanceof HTMLInputElement || n instanceof HTMLTextAreaElement) {
+          el = n;
+          break;
+        }
+      }
+      // As a fallback, walk down activeElement chain (deep active element via shadow roots)
+      if (!el) {
+        try {
+          let ae = document.activeElement;
+          let guard = 0;
+          while (ae && guard++ < 10) {
+            if (ae instanceof HTMLInputElement || ae instanceof HTMLTextAreaElement) {
+              el = ae;
+              break;
+            }
+            const anyAe = ae;
+            if (anyAe && anyAe.shadowRoot && anyAe.shadowRoot.activeElement) {
+              ae = anyAe.shadowRoot.activeElement;
+              continue;
+            }
+            break;
+          }
+        } catch {}
+      }
+      if (!el) return;
+      this._handleInputForElement(el);
+    }
+
+    // Shared input processing logic (debounce/merge/sensitivity)
+    _handleInputForElement(el) {
       try {
         const t = (el.getAttribute && el.getAttribute('type')) || '';
         const tt = String(t).toLowerCase();
         if (tt === 'checkbox' || tt === 'radio' || tt === 'file') return;
       } catch {}
       const elRef = this._getElRef(el);
+      const target = SelectorEngine.buildTarget(el);
       const isSensitive =
         this.hideInputValues ||
-        CONFIG.SENSITIVE_INPUT_TYPES.has((el.getAttribute('type') || '').toLowerCase());
+        CONFIG.SENSITIVE_INPUT_TYPES.has(
+          ((el.getAttribute && el.getAttribute('type')) || '').toLowerCase(),
+        );
       let value = el.value || '';
       if (isSensitive) {
         const varKey = el.name ? el.name : `var_${Math.random().toString(36).slice(2, 6)}`;
@@ -641,17 +730,24 @@
         value = `{${varKey}}`;
       }
       const nowTs = Date.now();
-      const sameRef = !!(this.lastFill.step && this.lastFill.step._recordingRef === elRef);
+      const last = this.lastFill.step;
+      const sameRef = !!(last && last._recordingRef === elRef);
+      const sameSelector = !!(
+        last &&
+        last.target &&
+        last.target.selector &&
+        target &&
+        target.selector &&
+        last.target.selector === target.selector
+      );
       const within = nowTs - this.lastFill.ts <= CONFIG.INPUT_DEBOUNCE_MS;
-      if (sameRef && within) {
+      if ((sameRef || sameSelector) && within) {
         this.lastFill.step.value = value;
         this.sessionBuffer.meta.updatedAt = new Date().toISOString();
         this.lastFill.ts = nowTs;
         return;
       }
-      const target = SelectorEngine.buildTarget(el);
       const newStep = { type: 'fill', target, value, screenshotOnFail: true };
-      // attach recording-time identity only in memory (not persisted)
       newStep._recordingRef = elRef;
       this._pushStep(newStep);
       this.lastFill = { step: newStep, ts: nowTs };
@@ -673,6 +769,10 @@
           return;
         }
         const target = SelectorEngine.buildTarget(el);
+        try {
+          const gref = SelectorEngine._ensureGlobalRef && SelectorEngine._ensureGlobalRef(el);
+          if (gref) target.ref = gref;
+        } catch {}
         const st = { type: 'fill', target, value: val, screenshotOnFail: true };
         st._recordingRef = elRef;
         this._pushStep(st);
@@ -683,6 +783,10 @@
         const t = (el.getAttribute && el.getAttribute('type')) || '';
         const tt = String(t).toLowerCase();
         const target = SelectorEngine.buildTarget(el);
+        try {
+          const gref = SelectorEngine._ensureGlobalRef && SelectorEngine._ensureGlobalRef(el);
+          if (gref) target.ref = gref;
+        } catch {}
         const elRef = this._getElRef(el);
         if (tt === 'checkbox') {
           const st = { type: 'fill', target, value: !!el.checked, screenshotOnFail: true };

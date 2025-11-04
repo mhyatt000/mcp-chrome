@@ -91,10 +91,50 @@ if (window.__FILL_HELPER_INITIALIZED__) {
       ];
 
       if (!validTags.includes(element.tagName)) {
-        return {
-          error: `Element with selector "${selector}" is not a fillable element (must be INPUT, TEXTAREA, or SELECT)`,
-          elementInfo,
-        };
+        // If the element is a custom element with open shadow root, try to find a fillable inner control
+        try {
+          const anyEl = /** @type {any} */ (element);
+          const sr = anyEl && anyEl.shadowRoot ? anyEl.shadowRoot : null;
+          if (sr) {
+            // Search common fillable targets inside shadow root (breadth-first)
+            const queue = Array.from(sr.children || []);
+            const isFillable = (el) =>
+              !!el &&
+              (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT');
+            while (queue.length) {
+              const cur = queue.shift();
+              if (!cur) continue;
+              if (isFillable(cur)) {
+                element = cur;
+                break;
+              }
+              try {
+                const children = cur.children || [];
+                for (let i = 0; i < children.length; i++) queue.push(children[i]);
+                const innerSr = /** @type {any} */ (cur).shadowRoot;
+                if (innerSr && innerSr.children) {
+                  for (let i = 0; i < innerSr.children.length; i++) queue.push(innerSr.children[i]);
+                }
+              } catch (_) {}
+            }
+            if (!validTags.includes(element.tagName)) {
+              return {
+                error: `Element with selector "${selector}" is not a fillable element (must be INPUT, TEXTAREA, or SELECT)`,
+                elementInfo,
+              };
+            }
+          } else {
+            return {
+              error: `Element with selector "${selector}" is not a fillable element (must be INPUT, TEXTAREA, or SELECT)`,
+              elementInfo,
+            };
+          }
+        } catch (_) {
+          return {
+            error: `Element with selector "${selector}" is not a fillable element (must be INPUT, TEXTAREA, or SELECT)`,
+            elementInfo,
+          };
+        }
       }
 
       // For input elements, check if the type is valid (allow type-specific branches below)
