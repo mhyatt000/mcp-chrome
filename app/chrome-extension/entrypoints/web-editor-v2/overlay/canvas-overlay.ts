@@ -88,8 +88,8 @@ export interface CanvasOverlay {
   render(): void;
   /** Clear all visual elements */
   clear(): void;
-  /** Update hover highlight */
-  setHoverRect(rect: ViewportRect | null): void;
+  /** Update hover highlight (with optional transition animation) */
+  setHoverRect(rect: ViewportRect | null, options?: { animate?: boolean }): void;
   /** Update selection highlight */
   setSelectionRect(rect: ViewportRect | null): void;
   /** Update drag ghost highlight (Phase 2.4) */
@@ -116,6 +116,9 @@ export interface CanvasOverlayOptions {
 
 const CANVAS_ATTR = 'data-mcp-canvas';
 const CANVAS_ATTR_VALUE = 'overlay';
+
+/** Duration of hover rect transition animation in milliseconds */
+const HOVER_ANIMATION_DURATION_MS = 100;
 
 /** Default styles for different box types */
 const BOX_STYLES = {
@@ -170,6 +173,30 @@ function isValidLine(line: ViewportLine | null): line is ViewportLine {
 function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, value));
+}
+
+// =============================================================================
+// Animation Helpers
+// =============================================================================
+
+/** Cubic ease-out curve: fast start, slow end (matches CSS ease-out approximately) */
+function easeOutCubic(t: number): number {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+/** Linear interpolation between two values */
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+/** Interpolate between two rectangles */
+function lerpRect(from: ViewportRect, to: ViewportRect, t: number): ViewportRect {
+  return {
+    left: lerp(from.left, to.left, t),
+    top: lerp(from.top, to.top, t),
+    width: lerp(from.width, to.width, t),
+    height: lerp(from.height, to.height, t),
+  };
 }
 
 /**
@@ -248,6 +275,20 @@ export function createCanvasOverlay(options: CanvasOverlayOptions): CanvasOverla
   // ==========================================================================
 
   let hoverRect: ViewportRect | null = null;
+
+  // Hover animation state: tracks in-progress transition between two rect positions
+  interface HoverAnimation {
+    /** Starting rectangle (from position) */
+    start: ViewportRect;
+    /** Ending rectangle (to position) */
+    end: ViewportRect;
+    /** Animation start timestamp (performance.now()) */
+    startTime: number;
+    /** Animation duration in milliseconds */
+    durationMs: number;
+  }
+  let hoverAnimation: HoverAnimation | null = null;
+
   let selectionRect: ViewportRect | null = null;
   let dragGhostRect: ViewportRect | null = null;
   let insertionLine: ViewportLine | null = null;
@@ -564,9 +605,28 @@ export function createCanvasOverlay(options: CanvasOverlayOptions): CanvasOverla
     // Reset dirty flag before drawing
     dirty = false;
 
+    // Calculate hover rect to render (may be animated)
+    const now = performance.now();
+    let hoverRectToRender = hoverRect;
+
+    if (hoverAnimation) {
+      const elapsed = now - hoverAnimation.startTime;
+      const progress = clamp(elapsed / hoverAnimation.durationMs, 0, 1);
+      const easedProgress = easeOutCubic(progress);
+      hoverRectToRender = lerpRect(hoverAnimation.start, hoverAnimation.end, easedProgress);
+
+      if (progress >= 1) {
+        // Animation complete, clear state
+        hoverAnimation = null;
+      } else {
+        // Animation in progress, schedule next frame
+        dirty = true;
+      }
+    }
+
     // Clear and redraw
     clearCanvas();
-    drawBox(hoverRect, BOX_STYLES.hover);
+    drawBox(hoverRectToRender, BOX_STYLES.hover);
     drawBox(selectionRect, BOX_STYLES.selection);
     drawBox(dragGhostRect, BOX_STYLES.dragGhost);
     drawInsertionLine(insertionLine);
@@ -579,7 +639,45 @@ export function createCanvasOverlay(options: CanvasOverlayOptions): CanvasOverla
     }
   }
 
-  function setHoverRect(rect: ViewportRect | null): void {
+  function setHoverRect(rect: ViewportRect | null, options?: { animate?: boolean }): void {
+    const shouldAnimate = options?.animate === true;
+
+    // Fast path: no animation requested (snap immediately)
+    if (!shouldAnimate) {
+      hoverAnimation = null;
+      hoverRect = rect;
+      markDirty();
+      return;
+    }
+
+    // Animation requested: calculate starting position
+    const now = performance.now();
+    let fromRect: ViewportRect | null = hoverRect;
+
+    // If animation is in progress, start from current interpolated position
+    // This ensures smooth transition when target changes mid-animation
+    if (hoverAnimation) {
+      const elapsed = now - hoverAnimation.startTime;
+      const progress = clamp(elapsed / hoverAnimation.durationMs, 0, 1);
+      const easedProgress = easeOutCubic(progress);
+      fromRect = lerpRect(hoverAnimation.start, hoverAnimation.end, easedProgress);
+    }
+
+    // Cannot animate if source or target rect is invalid
+    if (!isValidRect(fromRect) || !isValidRect(rect)) {
+      hoverAnimation = null;
+      hoverRect = rect;
+      markDirty();
+      return;
+    }
+
+    // Start animation from current position to target
+    hoverAnimation = {
+      start: { ...fromRect },
+      end: { ...rect },
+      startTime: now,
+      durationMs: HOVER_ANIMATION_DURATION_MS,
+    };
     hoverRect = rect;
     markDirty();
   }
@@ -611,6 +709,7 @@ export function createCanvasOverlay(options: CanvasOverlayOptions): CanvasOverla
 
   function clear(): void {
     hoverRect = null;
+    hoverAnimation = null;
     selectionRect = null;
     dragGhostRect = null;
     insertionLine = null;

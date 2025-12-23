@@ -12,6 +12,60 @@
 
 ---
 
+## 实施进度
+
+### 已完成
+
+#### Phase 1.1: Action 系统 ✅
+
+- [x] `actions/types.ts` - 完整的 Action 类型定义（28 种 Action 类型）
+- [x] `actions/registry.ts` - Action 执行器注册表（支持中间件/钩子）
+- [x] `actions/index.ts` - 模块导出
+
+#### Phase 1.2: 选择器引擎 - 基础框架 ✅
+
+- [x] `shared/selector/types.ts` - 选择器类型定义
+- [x] `shared/selector/stability.ts` - 稳定性评分计算
+- [x] `shared/selector/strategies/` - 5 种基础选择器策略
+- [x] `shared/selector/generator.ts` - 统一选择器生成
+- [x] `shared/selector/locator.ts` - 统一元素定位
+
+#### Phase 1.2: 选择器引擎 - 补齐商业级功能 ✅
+
+对比 `web-editor-v2/locator.ts`，已补齐以下功能：
+
+| 功能                    | 状态    | 说明                                                                              |
+| ----------------------- | ------- | --------------------------------------------------------------------------------- |
+| **指纹(Fingerprint)**   | ✅ 完成 | `fingerprint.ts` - 生成、解析、验证、相似度计算                                   |
+| **DOM Path**            | ✅ 完成 | `dom-path.ts` - 路径计算、定位、比较                                              |
+| **锚点+相对路径策略**   | ✅ 完成 | `strategies/anchor-relpath.ts` - anchor + nth-of-type 路径                        |
+| **Shadow DOM 完整支持** | ✅ 完成 | `shadow-dom.ts` - 链遍历和查询；`generator.ts` - 链生成                           |
+| **name/title/alt 属性** | ✅ 完成 | `testid.ts` + `generator.ts` - 带标签前缀规则                                     |
+| **类型扩展**            | ✅ 完成 | `types.ts` - `ExtendedSelectorTarget`、`fingerprint/domPath/shadowHostChain` 字段 |
+
+**Phase 2 待完成**（需要消息协议/注入脚本修改）：
+
+- [ ] 更新 `locator.ts` - 添加指纹验证逻辑（需要 DOM 侧协议支持）
+- [ ] 抽取共用工具到 `shared/selector-core/` 供 web-editor-v2 复用（可选优化）
+
+> **注意**: aria-label 属性已由 `ariaStrategy` 处理，不重复加入 testid 策略
+
+### 待开始
+
+#### Phase 1.3: 数据模型统一
+
+- [ ] 更新 Flow 类型定义
+- [ ] 移除旧的 Step 类型引用
+
+#### Phase 2-7: 后续阶段
+
+- Phase 2: 录制系统重写
+- Phase 3: 回放引擎重写
+- Phase 4: Builder 重构
+- Phase 5-7: 高级功能、iframe、测试
+
+---
+
 ## 一、现状分析
 
 ### 1.1 架构现状

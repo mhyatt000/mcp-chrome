@@ -75,7 +75,7 @@ const SHADOW_HOST_STYLES = /* css */ `
     --we-border-section: #f3f3f3;
 
     /* Text colors */
-    --we-text-primary: #171717;
+    --we-text-primary: #333333;
     --we-text-secondary: #737373;
     --we-text-muted: #a3a3a3;
 
@@ -370,6 +370,48 @@ const SHADOW_HOST_STYLES = /* css */ `
     display: block;
   }
 
+  /* Drag handle (grip) - used for repositioning floating UI */
+  .we-drag-handle {
+    width: var(--we-icon-btn-size);
+    height: var(--we-icon-btn-size);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: var(--we-radius-control);
+    color: var(--we-text-muted);
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .we-drag-handle:hover {
+    background: var(--we-control-bg);
+    color: var(--we-text-secondary);
+  }
+
+  .we-drag-handle:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--we-focus-ring);
+  }
+
+  .we-drag-handle:active,
+  .we-drag-handle[data-dragging="true"] {
+    cursor: grabbing;
+    background: var(--we-control-bg-hover);
+    color: var(--we-text-primary);
+  }
+
+  .we-drag-handle svg {
+    width: 14px;
+    height: 14px;
+    display: block;
+  }
+
   /* Toolbar */
   .we-toolbar {
     position: fixed;
@@ -396,6 +438,15 @@ const SHADOW_HOST_STYLES = /* css */ `
   .we-toolbar[data-position="bottom"] {
     top: auto;
     bottom: 16px;
+  }
+
+  /* Dragged toolbar: use left/top (inline styles) instead of docked centering */
+  .we-toolbar[data-dragged="true"][data-minimized="false"] {
+    left: auto;
+    right: auto;
+    top: auto;
+    bottom: auto;
+    transform: none;
   }
 
   /* Minimized toolbar - becomes a small icon button fixed at top-right (left of property panel) */
@@ -614,6 +665,15 @@ const SHADOW_HOST_STYLES = /* css */ `
     max-height: calc(100vh - 32px);
   }
 
+  /* Dragged property panel: becomes a floating fixed panel positioned via left/top (inline styles) */
+  .we-prop-panel[data-dragged="true"][data-minimized="false"] {
+    position: fixed;
+    left: auto;
+    right: auto;
+    top: auto;
+    bottom: auto;
+  }
+
   /* Minimized property panel - becomes a small icon button fixed at top-right */
   .we-prop-panel[data-minimized="true"] {
     position: fixed;
@@ -699,9 +759,18 @@ const SHADOW_HOST_STYLES = /* css */ `
     overflow-y: auto;
     overflow-x: hidden;
     padding: 12px;
+    padding-bottom: 80px; /* Extra space for scrolling (design spec: pb-20) */
     display: flex;
     flex-direction: column;
     gap: 12px;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE 10+ */
+  }
+
+  /* Hide scrollbar for webkit browsers */
+  .we-prop-body::-webkit-scrollbar {
+    width: 0;
+    height: 0;
   }
 
   /* Force hidden state for property panel sections during minimization */
@@ -920,6 +989,12 @@ const SHADOW_HOST_STYLES = /* css */ `
     width: 20px;
   }
 
+  /* Content container for complex controls (icon groups, grids, etc.) */
+  .we-field-content {
+    flex: 1;
+    min-width: 0;
+  }
+
   /* Input styling aligned with design spec:
    * - Gray background by default
    * - Inset border on hover
@@ -928,7 +1003,7 @@ const SHADOW_HOST_STYLES = /* css */ `
   .we-input {
     flex: 1;
     min-width: 0;
-    height: 26px;
+    height: 28px; /* Design spec: h-[28px] */
     padding: 0 8px;
     font-size: 11px;
     font-family: inherit;
@@ -951,7 +1026,7 @@ const SHADOW_HOST_STYLES = /* css */ `
   .we-input:focus {
     background: var(--we-control-bg-focus);
     border-color: var(--we-control-border-focus);
-    box-shadow: inset 0 0 0 1px var(--we-control-border-focus);
+    box-shadow: inset 0 0 0 2px var(--we-control-border-focus); /* Design spec: 2px inset */
   }
 
   /* ==========================================================================
@@ -965,7 +1040,7 @@ const SHADOW_HOST_STYLES = /* css */ `
     min-width: 0;
     display: flex;
     align-items: center;
-    height: 26px;
+    height: 28px; /* Design spec: h-[28px] */
     padding: 0 8px;
     gap: 4px;
     background: var(--we-control-bg);
@@ -981,7 +1056,7 @@ const SHADOW_HOST_STYLES = /* css */ `
   .we-input-container:focus-within {
     background: var(--we-control-bg-focus);
     border-color: var(--we-control-border-focus);
-    box-shadow: inset 0 0 0 1px var(--we-control-border-focus);
+    box-shadow: inset 0 0 0 2px var(--we-control-border-focus); /* Design spec: 2px inset */
   }
 
   .we-input-container__input {
@@ -1047,7 +1122,7 @@ const SHADOW_HOST_STYLES = /* css */ `
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 26px;
+    height: 28px; /* Design spec: h-[28px] */
     padding: 4px;
     background: var(--we-control-bg);
     border: 1px solid transparent;
@@ -1063,7 +1138,7 @@ const SHADOW_HOST_STYLES = /* css */ `
   .we-icon-button-group__btn:focus-visible {
     outline: none;
     border-color: var(--we-control-border-focus);
-    box-shadow: inset 0 0 0 1px var(--we-control-border-focus);
+    box-shadow: inset 0 0 0 2px var(--we-control-border-focus); /* Design spec: 2px inset */
   }
 
   .we-icon-button-group__btn[data-selected="true"] {
@@ -1173,7 +1248,7 @@ const SHADOW_HOST_STYLES = /* css */ `
   .we-select {
     flex: 1;
     min-width: 0;
-    height: 26px;
+    height: 28px; /* Design spec: h-[28px] */
     padding: 0 24px 0 8px;
     font-size: 11px;
     font-family: inherit;
@@ -1194,7 +1269,7 @@ const SHADOW_HOST_STYLES = /* css */ `
   .we-select:focus {
     background-color: var(--we-control-bg-focus);
     border-color: var(--we-control-border-focus);
-    box-shadow: inset 0 0 0 1px var(--we-control-border-focus);
+    box-shadow: inset 0 0 0 2px var(--we-control-border-focus); /* Design spec: 2px inset */
   }
 
   /* Field row for multiple inputs side by side */
@@ -1210,77 +1285,28 @@ const SHADOW_HOST_STYLES = /* css */ `
     gap: 6px;
   }
 
-  /* Spacing box visual (for margin/padding) */
-  .we-spacing-box {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 16 / 10;
-    min-height: 120px;
-    background: rgba(241, 245, 249, 0.8);
-    border: 1px solid rgba(226, 232, 240, 0.9);
-    border-radius: 8px;
+  /* Spacing section (Padding / Margin) */
+  .we-spacing-section {
     display: flex;
-    align-items: center;
-    justify-content: center;
+    flex-direction: column;
+    gap: 6px;
   }
 
-  .we-spacing-inner {
-    width: 60%;
-    height: 60%;
-    background: rgba(99, 102, 241, 0.1);
-    border: 1px dashed rgba(99, 102, 241, 0.4);
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  .we-spacing-section + .we-spacing-section {
+    margin-top: 10px;
+  }
+
+  .we-spacing-header {
     font-size: 10px;
-    color: #64748b;
+    color: #6b7280;
   }
 
-  .we-spacing-input {
-    position: absolute;
-    width: 48px;
-    padding: 3px 4px;
-    font-size: 11px;
-    text-align: center;
-    background: var(--we-control-bg);
-    border: 0;
-    border-radius: var(--we-radius-control);
-    outline: none;
-    transition: background 0.15s ease, box-shadow 0.15s ease;
+  /* Spacing 2x2 grid layout */
+  .we-spacing-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
   }
-
-  .we-spacing-input:focus {
-    box-shadow: 0 0 0 2px var(--we-focus-ring);
-  }
-
-  /* Scrubbing cursor: show ew-resize when not focused (to indicate draggability) */
-  .we-spacing-input:not(:focus) {
-    cursor: ew-resize;
-  }
-
-  /* Active scrubbing state */
-  .we-spacing-input--scrubbing {
-    background: var(--we-control-bg-hover);
-    box-shadow: 0 0 0 2px var(--we-focus-ring);
-  }
-
-  .we-spacing-input--top { top: 6px; left: 50%; transform: translateX(-50%); }
-  .we-spacing-input--right { right: 6px; top: 50%; transform: translateY(-50%); }
-  .we-spacing-input--bottom { bottom: 6px; left: 50%; transform: translateX(-50%); }
-  .we-spacing-input--left { left: 6px; top: 50%; transform: translateY(-50%); }
-
-  .we-spacing-label {
-    position: absolute;
-    font-size: 9px;
-    font-weight: 600;
-    color: #94a3b8;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  .we-spacing-label--margin { top: 2px; left: 4px; }
-  .we-spacing-label--padding { top: 50%; left: 50%; transform: translate(-50%, -50%); }
 
   /* ==========================================================================
      CSS Panel (Phase 4.6)

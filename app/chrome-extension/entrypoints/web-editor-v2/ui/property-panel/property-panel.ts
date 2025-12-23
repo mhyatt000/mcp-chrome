@@ -14,6 +14,7 @@
  */
 
 import { Disposer } from '../../utils/disposables';
+import { installFloatingDrag, type FloatingPosition } from '../floating-drag';
 import type {
   PropertyPanel,
   PropertyPanelOptions,
@@ -157,6 +158,37 @@ function createSlidersIcon(): SVGElement {
 }
 
 /**
+ * Create grip (drag handle) SVG icon
+ */
+function createGripIcon(): SVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 20 20');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('aria-hidden', 'true');
+
+  // 6 dots in 2 columns
+  const dots: Array<[number, number]> = [
+    [7, 6],
+    [13, 6],
+    [7, 10],
+    [13, 10],
+    [7, 14],
+    [13, 14],
+  ];
+
+  for (const [cx, cy] of dots) {
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', String(cx));
+    circle.setAttribute('cy', String(cy));
+    circle.setAttribute('r', '1.4');
+    circle.setAttribute('fill', 'currentColor');
+    svg.append(circle);
+  }
+
+  return svg;
+}
+
+/**
  * Create a collapsible control group
  */
 function createControlGroup(groupId: string, label: string, disposer: Disposer): ControlGroup {
@@ -231,6 +263,7 @@ export function createPropertyPanel(options: PropertyPanelOptions): PropertyPane
   let currentTarget: Element | null = null;
   let currentTab: PropertyPanelTab = options.defaultTab ?? 'design';
   let minimized = false;
+  let floatingPosition: FloatingPosition | null = options.initialPosition ?? null;
   const controlGroups = new Map<ControlGroupId, ControlGroup>();
   const controls: DesignControl[] = [];
   let componentsTree: ComponentsTree | null = null;
@@ -259,12 +292,21 @@ export function createPropertyPanel(options: PropertyPanelOptions): PropertyPane
   root.dataset.tab = currentTab;
   root.dataset.empty = 'true';
   root.dataset.minimized = 'false';
+  root.dataset.dragged = floatingPosition ? 'true' : 'false';
 
   // Header
   const header = document.createElement('header');
   header.className = 'we-header';
 
-  // Header left: title and target label
+  // Drag handle (grip) - placed directly in header for proper alignment
+  const dragHandle = document.createElement('button');
+  dragHandle.type = 'button';
+  dragHandle.className = 'we-drag-handle';
+  dragHandle.setAttribute('aria-label', 'Drag property panel');
+  dragHandle.title = 'Drag';
+  dragHandle.append(createGripIcon());
+
+  // Header left: title and target label (column layout)
   const headerLeft = document.createElement('div');
   headerLeft.className = 'we-prop-header-left';
 
@@ -347,7 +389,7 @@ export function createPropertyPanel(options: PropertyPanelOptions): PropertyPane
     headerRight.append(closeBtn);
   }
 
-  header.append(headerLeft, headerRight);
+  header.append(dragHandle, headerLeft, headerRight);
 
   // Body container
   const body = document.createElement('div');
@@ -391,6 +433,75 @@ export function createPropertyPanel(options: PropertyPanelOptions): PropertyPane
   // Mount to container
   options.container.append(root);
   disposer.add(() => root.remove());
+
+  // ==========================================================================
+  // Floating Drag (Panel Position)
+  // ==========================================================================
+
+  const CLAMP_MARGIN_PX = 16;
+
+  function clampToViewport(position: FloatingPosition): FloatingPosition {
+    const rect = root.getBoundingClientRect();
+    const viewportW = window.innerWidth;
+    const viewportH = window.innerHeight;
+
+    const margin = CLAMP_MARGIN_PX;
+    const maxLeft = Math.max(margin, viewportW - margin - rect.width);
+    const maxTop = Math.max(margin, viewportH - margin - rect.height);
+
+    const left = Number.isFinite(position.left) ? position.left : 0;
+    const top = Number.isFinite(position.top) ? position.top : 0;
+
+    return {
+      left: Math.round(Math.min(maxLeft, Math.max(margin, left))),
+      top: Math.round(Math.min(maxTop, Math.max(margin, top))),
+    };
+  }
+
+  function syncFloatingPositionStyles(): void {
+    root.dataset.dragged = floatingPosition ? 'true' : 'false';
+
+    // While minimized, prefer the existing minimized layout (top-right)
+    if (!floatingPosition || minimized) {
+      root.style.left = '';
+      root.style.top = '';
+      root.style.right = '';
+      root.style.bottom = '';
+      return;
+    }
+
+    root.style.left = `${floatingPosition.left}px`;
+    root.style.top = `${floatingPosition.top}px`;
+    root.style.right = 'auto';
+    root.style.bottom = 'auto';
+  }
+
+  function setPosition(position: FloatingPosition | null): void {
+    floatingPosition = position ? clampToViewport(position) : null;
+    syncFloatingPositionStyles();
+    options.onPositionChange?.(floatingPosition);
+  }
+
+  function getPosition(): FloatingPosition | null {
+    return floatingPosition;
+  }
+
+  // Install drag behavior
+  disposer.add(
+    installFloatingDrag({
+      handleEl: dragHandle,
+      targetEl: root,
+      clampMargin: CLAMP_MARGIN_PX,
+      onPositionChange: (pos) => setPosition(pos),
+    }),
+  );
+
+  // Apply initial position (if provided)
+  if (floatingPosition !== null) {
+    setPosition(floatingPosition);
+  } else {
+    syncFloatingPositionStyles();
+  }
 
   // ==========================================================================
   // Initialize Controls
@@ -565,6 +676,14 @@ export function createPropertyPanel(options: PropertyPanelOptions): PropertyPane
       minimized ? 'Expand property panel' : 'Minimize property panel',
     );
     minimizeBtn.title = minimized ? 'Expand' : 'Minimize';
+
+    // Keep minimized layout stable while preserving stored floating position.
+    // When restoring, re-apply stored position (and clamp with current size).
+    if (!minimized && floatingPosition) {
+      setPosition(floatingPosition);
+    } else {
+      syncFloatingPositionStyles();
+    }
   }
 
   // ==========================================================================
@@ -791,6 +910,8 @@ export function createPropertyPanel(options: PropertyPanelOptions): PropertyPane
     setTab,
     getTab,
     refresh,
+    getPosition,
+    setPosition,
     dispose,
   };
 }

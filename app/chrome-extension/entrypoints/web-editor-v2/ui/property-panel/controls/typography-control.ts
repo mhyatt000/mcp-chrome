@@ -16,6 +16,8 @@ import type { StyleTransactionHandle, TransactionManager } from '../../../core/t
 import type { DesignTokensService, CssVarName } from '../../../core/design-tokens';
 import { createTokenPicker, type TokenPicker } from './token-picker';
 import { createColorField, type ColorField } from './color-field';
+import { createInputContainer, type InputContainer } from '../components/input-container';
+import { extractUnitSuffix, hasExplicitUnit, normalizeLength } from './css-helpers';
 import { wireNumberStepping } from './number-stepping';
 import type { DesignControl } from '../types';
 
@@ -34,6 +36,8 @@ interface StandardFieldState {
   property: TypographyProperty;
   element: HTMLSelectElement | HTMLInputElement;
   handle: StyleTransactionHandle | null;
+  /** InputContainer reference for input fields (null/undefined for selects) */
+  container?: InputContainer;
 }
 
 /** Color field state */
@@ -58,14 +62,6 @@ function isFieldFocused(el: HTMLElement): boolean {
   } catch {
     return false;
   }
-}
-
-function normalizeLength(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) return '';
-  if (/^-?(?:\d+|\d*\.\d+)$/.test(trimmed)) return `${trimmed}px`;
-  if (/^-?\d+\.$/.test(trimmed)) return `${trimmed.slice(0, -1)}px`;
-  return trimmed;
 }
 
 /**
@@ -117,18 +113,19 @@ export function createTypographyControl(options: TypographyControlOptions): Desi
   const root = document.createElement('div');
   root.className = 'we-field-group';
 
-  // Font Size
+  // Font Size (with input-container for suffix support)
   const fontSizeRow = document.createElement('div');
   fontSizeRow.className = 'we-field';
   const fontSizeLabel = document.createElement('span');
   fontSizeLabel.className = 'we-field-label';
   fontSizeLabel.textContent = 'Size';
-  const fontSizeInput = document.createElement('input');
-  fontSizeInput.type = 'text';
-  fontSizeInput.className = 'we-input';
-  fontSizeInput.autocomplete = 'off';
-  fontSizeInput.setAttribute('aria-label', 'Font Size');
-  fontSizeRow.append(fontSizeLabel, fontSizeInput);
+  const fontSizeContainer = createInputContainer({
+    ariaLabel: 'Font Size',
+    inputMode: 'decimal',
+    prefix: null,
+    suffix: 'px',
+  });
+  fontSizeRow.append(fontSizeLabel, fontSizeContainer.root);
 
   // Font Weight
   const fontWeightRow = document.createElement('div');
@@ -147,22 +144,23 @@ export function createTypographyControl(options: TypographyControlOptions): Desi
   }
   fontWeightRow.append(fontWeightLabel, fontWeightSelect);
 
-  // Line Height
+  // Line Height (with input-container, suffix only shown if value has unit)
   const lineHeightRow = document.createElement('div');
   lineHeightRow.className = 'we-field';
   const lineHeightLabel = document.createElement('span');
   lineHeightLabel.className = 'we-field-label';
   lineHeightLabel.textContent = 'Line H';
-  const lineHeightInput = document.createElement('input');
-  lineHeightInput.type = 'text';
-  lineHeightInput.className = 'we-input';
-  lineHeightInput.autocomplete = 'off';
-  lineHeightInput.setAttribute('aria-label', 'Line Height');
-  lineHeightRow.append(lineHeightLabel, lineHeightInput);
+  const lineHeightContainer = createInputContainer({
+    ariaLabel: 'Line Height',
+    inputMode: 'decimal',
+    prefix: null,
+    suffix: null, // Will be set dynamically based on value
+  });
+  lineHeightRow.append(lineHeightLabel, lineHeightContainer.root);
 
   // Wire up keyboard stepping for arrow up/down
-  wireNumberStepping(disposer, fontSizeInput, { mode: 'css-length' });
-  wireNumberStepping(disposer, lineHeightInput, {
+  wireNumberStepping(disposer, fontSizeContainer.input, { mode: 'css-length' });
+  wireNumberStepping(disposer, lineHeightContainer.input, {
     mode: 'css-length',
     step: 0.1,
     shiftStep: 1,
@@ -283,7 +281,13 @@ export function createTypographyControl(options: TypographyControlOptions): Desi
   // Field state map
   // -------------------------------------------------------------------------
   const fields: Record<TypographyProperty, FieldState> = {
-    'font-size': { kind: 'standard', property: 'font-size', element: fontSizeInput, handle: null },
+    'font-size': {
+      kind: 'standard',
+      property: 'font-size',
+      element: fontSizeContainer.input,
+      container: fontSizeContainer,
+      handle: null,
+    },
     'font-weight': {
       kind: 'standard',
       property: 'font-weight',
@@ -293,7 +297,8 @@ export function createTypographyControl(options: TypographyControlOptions): Desi
     'line-height': {
       kind: 'standard',
       property: 'line-height',
-      element: lineHeightInput,
+      element: lineHeightContainer.input,
+      container: lineHeightContainer,
       handle: null,
     },
     'text-align': {
@@ -383,6 +388,14 @@ export function createTypographyControl(options: TypographyControlOptions): Desi
         if (el instanceof HTMLInputElement) {
           el.value = '';
           el.placeholder = '';
+          // Reset suffix to defaults
+          if (field.container) {
+            if (property === 'font-size') {
+              field.container.setSuffix('px');
+            } else if (property === 'line-height') {
+              field.container.setSuffix(null);
+            }
+          }
         }
         return;
       }
@@ -392,14 +405,22 @@ export function createTypographyControl(options: TypographyControlOptions): Desi
 
       if (el instanceof HTMLInputElement) {
         if (isEditing && !force) return;
-        // Display real value: prefer inline style, fallback to computed style
+
         const inlineValue = readInlineValue(target, property);
-        if (inlineValue) {
-          el.value = inlineValue;
-          el.placeholder = '';
-        } else {
-          el.value = readComputedValue(target, property);
-          el.placeholder = '';
+        const displayValue = inlineValue || readComputedValue(target, property);
+        el.value = displayValue;
+        el.placeholder = '';
+
+        // Update suffix dynamically
+        if (field.container) {
+          if (property === 'font-size') {
+            field.container.setSuffix(extractUnitSuffix(displayValue));
+          } else if (property === 'line-height') {
+            // Line-height: only show suffix if value has explicit unit
+            field.container.setSuffix(
+              hasExplicitUnit(displayValue) ? extractUnitSuffix(displayValue) : null,
+            );
+          }
         }
       } else {
         const inline = readInlineValue(target, property);

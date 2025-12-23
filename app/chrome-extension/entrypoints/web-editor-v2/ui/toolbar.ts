@@ -15,6 +15,7 @@
 
 import type { StructureOperationData } from '@/common/web-editor-types';
 import { Disposer } from '../utils/disposables';
+import { installFloatingDrag, type FloatingPosition } from './floating-drag';
 
 // =============================================================================
 // Types
@@ -55,6 +56,16 @@ export interface ToolbarOptions {
   container: HTMLElement;
   /** Position (default: top) */
   dock?: ToolbarDock;
+  /**
+   * Initial floating position (viewport coordinates).
+   * When provided, the toolbar uses left/top positioning and becomes draggable.
+   */
+  initialPosition?: FloatingPosition | null;
+  /**
+   * Called whenever the floating position changes.
+   * Use null to indicate the toolbar is in its default docked position.
+   */
+  onPositionChange?: (position: FloatingPosition | null) => void;
   /** Called when Apply button is clicked */
   onApply?: () => void | ApplyResult | Promise<void | ApplyResult>;
   /**
@@ -86,6 +97,10 @@ export interface Toolbar {
   setHistory(undoCount: number, redoCount: number): void;
   /** Update status display */
   setStatus(status: ToolbarStatus, message?: string): void;
+  /** Get current floating position (viewport coordinates), null when docked */
+  getPosition(): FloatingPosition | null;
+  /** Set floating position (viewport coordinates), pass null to reset to docked */
+  setPosition(position: FloatingPosition | null): void;
   /** Cleanup */
   dispose(): void;
 }
@@ -151,6 +166,37 @@ function createWandIcon(): SVGElement {
   return svg;
 }
 
+/**
+ * Create grip (drag handle) SVG icon
+ */
+function createGripIcon(): SVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 20 20');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('aria-hidden', 'true');
+
+  // 6 dots in 2 columns
+  const dots: Array<[number, number]> = [
+    [7, 6],
+    [13, 6],
+    [7, 10],
+    [13, 10],
+    [7, 14],
+    [13, 14],
+  ];
+
+  for (const [cx, cy] of dots) {
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', String(cx));
+    circle.setAttribute('cy', String(cy));
+    circle.setAttribute('r', '1.4');
+    circle.setAttribute('fill', 'currentColor');
+    svg.append(circle);
+  }
+
+  return svg;
+}
+
 // =============================================================================
 // Status Reset Timer
 // =============================================================================
@@ -202,6 +248,7 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
   let applying = false;
   let resetTimer: number | null = null;
   let minimized = false;
+  let floatingPosition: FloatingPosition | null = options.initialPosition ?? null;
 
   // ==========================================================================
   // DOM Structure
@@ -213,12 +260,21 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
   root.dataset.position = dock;
   root.dataset.status = status;
   root.dataset.minimized = 'false';
+  root.dataset.dragged = floatingPosition ? 'true' : 'false';
   root.setAttribute('role', 'toolbar');
   root.setAttribute('aria-label', 'Web Editor Toolbar');
 
-  // Left section: title
+  // Left section: drag handle + title
   const left = document.createElement('div');
   left.className = 'we-toolbar-left';
+
+  // Drag handle (grip)
+  const dragHandle = document.createElement('button');
+  dragHandle.type = 'button';
+  dragHandle.className = 'we-drag-handle';
+  dragHandle.setAttribute('aria-label', 'Drag toolbar');
+  dragHandle.title = 'Drag';
+  dragHandle.append(createGripIcon());
 
   const title = document.createElement('div');
   title.className = 'we-title';
@@ -228,7 +284,7 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
   badge.className = 'we-badge';
   badge.textContent = 'V2';
   title.append(titleText, badge);
-  left.append(title);
+  left.append(dragHandle, title);
 
   // Center section: counts and status
   const center = document.createElement('div');
@@ -479,6 +535,77 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
   disposer.add(() => root.remove());
 
   // ==========================================================================
+  // Floating Drag (Toolbar Position)
+  // ==========================================================================
+
+  const CLAMP_MARGIN_PX = 16;
+
+  function clampToViewport(position: FloatingPosition): FloatingPosition {
+    const rect = root.getBoundingClientRect();
+    const viewportW = window.innerWidth;
+    const viewportH = window.innerHeight;
+
+    const margin = CLAMP_MARGIN_PX;
+    const maxLeft = Math.max(margin, viewportW - margin - rect.width);
+    const maxTop = Math.max(margin, viewportH - margin - rect.height);
+
+    const left = Number.isFinite(position.left) ? position.left : 0;
+    const top = Number.isFinite(position.top) ? position.top : 0;
+
+    return {
+      left: Math.round(Math.min(maxLeft, Math.max(margin, left))),
+      top: Math.round(Math.min(maxTop, Math.max(margin, top))),
+    };
+  }
+
+  function syncFloatingPositionStyles(): void {
+    root.dataset.dragged = floatingPosition ? 'true' : 'false';
+
+    // While minimized, prefer the existing minimized layout (top-right)
+    if (!floatingPosition || minimized) {
+      root.style.left = '';
+      root.style.top = '';
+      root.style.right = '';
+      root.style.bottom = '';
+      root.style.transform = '';
+      return;
+    }
+
+    root.style.left = `${floatingPosition.left}px`;
+    root.style.top = `${floatingPosition.top}px`;
+    root.style.right = 'auto';
+    root.style.bottom = 'auto';
+    root.style.transform = 'none';
+  }
+
+  function setPosition(position: FloatingPosition | null): void {
+    floatingPosition = position ? clampToViewport(position) : null;
+    syncFloatingPositionStyles();
+    options.onPositionChange?.(floatingPosition);
+  }
+
+  function getPosition(): FloatingPosition | null {
+    return floatingPosition;
+  }
+
+  // Install drag behavior
+  disposer.add(
+    installFloatingDrag({
+      handleEl: dragHandle,
+      targetEl: root,
+      clampMargin: CLAMP_MARGIN_PX,
+      onPositionChange: (pos) => setPosition(pos),
+    }),
+  );
+
+  // Apply initial position (if provided)
+  if (floatingPosition !== null) {
+    setPosition(floatingPosition);
+  } else {
+    syncFloatingPositionStyles();
+  }
+
+  // ==========================================================================
   // Timer Management
   // ==========================================================================
 
@@ -520,6 +647,14 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
       center.hidden = false;
       right.hidden = false;
       right.insertBefore(minimizeBtn, closeBtn);
+    }
+
+    // Keep minimized layout stable while preserving stored floating position.
+    // When restoring, re-apply stored position (and clamp with current size).
+    if (!minimized && floatingPosition) {
+      setPosition(floatingPosition);
+    } else {
+      syncFloatingPositionStyles();
     }
   }
 
@@ -747,6 +882,8 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
   return {
     setHistory,
     setStatus,
+    getPosition,
+    setPosition,
     dispose: () => disposer.dispose(),
   };
 }

@@ -110,7 +110,7 @@ export function createInputContainer(options: InputContainerOptions): InputConta
   const input = document.createElement('input');
   input.type = type;
   input.className = joinClassNames('we-input-container__input', inputClassName);
-  input.autocomplete = autocomplete;
+  input.setAttribute('autocomplete', autocomplete);
   input.spellcheck = spellcheck;
   input.setAttribute('aria-label', ariaLabel);
   if (inputMode) {

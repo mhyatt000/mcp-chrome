@@ -74,10 +74,18 @@ interface EditorInternalState {
   perfHotkeyCleanup: (() => void) | null;
   /** Currently hovered element (for hover highlight) */
   hoveredElement: Element | null;
+  /** One-shot flag: whether next hover rect update should animate */
+  pendingHoverTransition: boolean;
   /** Currently selected element (for selection highlight) */
   selectedElement: Element | null;
   /** Snapshot of transaction being applied (for rollback on failure) */
   applyingSnapshot: ApplySnapshot | null;
+  /** Floating toolbar position (viewport coordinates), null when docked */
+  toolbarPosition: { left: number; top: number } | null;
+  /** Floating property panel position (viewport coordinates), null when anchored */
+  propertyPanelPosition: { left: number; top: number } | null;
+  /** Cleanup for window resize clamping (floating UI) */
+  uiResizeCleanup: (() => void) | null;
 }
 
 // =============================================================================
@@ -110,8 +118,12 @@ export function createWebEditorV2(): WebEditorV2Api {
     perfMonitor: null,
     perfHotkeyCleanup: null,
     hoveredElement: null,
+    pendingHoverTransition: false,
     selectedElement: null,
     applyingSnapshot: null,
+    toolbarPosition: null,
+    propertyPanelPosition: null,
+    uiResizeCleanup: null,
   };
 
   /** Default modifiers for programmatic selection (e.g., from breadcrumbs) */
@@ -277,7 +289,13 @@ export function createWebEditorV2(): WebEditorV2Api {
    * Handle hover state changes from EventController
    */
   function handleHover(element: Element | null): void {
+    const prevElement = state.hoveredElement;
     state.hoveredElement = element;
+
+    // Determine if we should animate the hover rect transition
+    // Only animate when switching between two valid elements (not null)
+    const shouldAnimate = prevElement !== null && element !== null && prevElement !== element;
+    state.pendingHoverTransition = shouldAnimate;
 
     // Delegate position tracking to PositionTracker
     // Use forceUpdate to avoid extra rAF frame delay
@@ -359,10 +377,15 @@ export function createWebEditorV2(): WebEditorV2Api {
     // Anchor breadcrumbs to the selection rect (viewport coordinates)
     state.breadcrumbs?.setAnchorRect(rects.selection);
 
+    // Consume one-shot animation flag (must read before clearing)
+    // This flag is only set when hover element changes, not for scroll/resize
+    const animateHover = state.pendingHoverTransition;
+    state.pendingHoverTransition = false;
+
     if (!state.canvasOverlay) return;
 
     // Update canvas overlay with new positions
-    state.canvasOverlay.setHoverRect(rects.hover);
+    state.canvasOverlay.setHoverRect(rects.hover, { animate: animateHover });
     state.canvasOverlay.setSelectionRect(rects.selection);
 
     // Sync resize handles with latest selection rect (Phase 4.9)
@@ -748,6 +771,10 @@ export function createWebEditorV2(): WebEditorV2Api {
       state.toolbar = createToolbar({
         container: elements.uiRoot,
         dock: 'top',
+        initialPosition: state.toolbarPosition,
+        onPositionChange: (position) => {
+          state.toolbarPosition = position;
+        },
         getApplyBlockReason: () => {
           const tm = state.transactionManager;
           if (!tm) return undefined;
@@ -832,6 +859,10 @@ export function createWebEditorV2(): WebEditorV2Api {
         container: elements.uiRoot,
         transactionManager: state.transactionManager,
         propsBridge: state.propsBridge,
+        initialPosition: state.propertyPanelPosition,
+        onPositionChange: (position) => {
+          state.propertyPanelPosition = position;
+        },
         defaultTab: 'design',
         onSelectElement: (element) => {
           // When an element is selected from Components tree
@@ -842,10 +873,48 @@ export function createWebEditorV2(): WebEditorV2Api {
         onRequestClose: () => stop(),
       });
 
+      // Clamp floating UI positions on window resize (session-only persistence)
+      let uiResizeRafId: number | null = null;
+
+      const clampFloatingUi = (): void => {
+        const toolbarPos = state.toolbarPosition;
+        const panelPos = state.propertyPanelPosition;
+
+        if (state.toolbar && toolbarPos) {
+          state.toolbar.setPosition(toolbarPos);
+        }
+        if (state.propertyPanel && panelPos) {
+          state.propertyPanel.setPosition(panelPos);
+        }
+      };
+
+      const onWindowResize = (): void => {
+        if (!state.active) return;
+        if (uiResizeRafId !== null) return;
+        uiResizeRafId = window.requestAnimationFrame(() => {
+          uiResizeRafId = null;
+          clampFloatingUi();
+        });
+      };
+
+      window.addEventListener('resize', onWindowResize, { passive: true });
+      state.uiResizeCleanup = () => {
+        window.removeEventListener('resize', onWindowResize);
+        if (uiResizeRafId !== null) {
+          window.cancelAnimationFrame(uiResizeRafId);
+          uiResizeRafId = null;
+        }
+      };
+
+      // Ensure restored positions are visible on first render
+      clampFloatingUi();
+
       state.active = true;
       console.log(`${WEB_EDITOR_V2_LOG_PREFIX} Started`);
     } catch (error) {
       // Cleanup on failure (reverse order)
+      state.uiResizeCleanup?.();
+      state.uiResizeCleanup = null;
       state.propertyPanel?.dispose();
       state.propertyPanel = null;
       state.propsBridge?.dispose();
@@ -900,6 +969,10 @@ export function createWebEditorV2(): WebEditorV2Api {
       if (editSession) {
         commitEdit();
       }
+
+      // Cleanup resize listener for floating UI
+      state.uiResizeCleanup?.();
+      state.uiResizeCleanup = null;
 
       // Cleanup Property Panel (Phase 3)
       state.propertyPanel?.dispose();

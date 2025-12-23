@@ -765,8 +765,8 @@
                 </select>
               </div>
               <div class="em-field" style="margin-top: 8px;">
-                <div class="em-field-label">Distance (pixels)</div>
-                <input class="em-field-input" id="__em_scroll_distance" type="number" value="300" />
+                <div class="em-field-label">Amount (1-10, ~100px each)</div>
+                <input class="em-field-input" id="__em_scroll_distance" type="number" min="1" max="10" step="1" value="3" />
               </div>
             </div>
 
@@ -2015,6 +2015,17 @@
       if (e.key !== 'Escape') return; // Still allow Escape to close
     }
 
+    // In execute mode, only handle Escape to close - don't intercept other keys
+    // This allows real page interactions (typing, scrolling, etc.)
+    const activeTab = StateStore.get('activeTab');
+    if (activeTab === 'execute') {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        stop();
+      }
+      return; // Don't intercept Space/Arrow keys in execute mode
+    }
+
     if (e.key === 'Escape') {
       e.preventDefault();
       stop();
@@ -2090,7 +2101,7 @@
 
       if (!filteredMatches || filteredMatches.length === 0) {
         StateStore.set({
-          validation: { status: 'error', message: 'No elements found' },
+          validation: { status: 'failure', message: 'No elements found' },
         });
         return;
       }
@@ -2127,7 +2138,7 @@
     } catch (error) {
       console.error('[verifyHighlightOnly] error:', error);
       StateStore.set({
-        validation: { status: 'error', message: error.message || 'Verification failed' },
+        validation: { status: 'failure', message: error.message || 'Verification failed' },
       });
     }
   }
@@ -2157,7 +2168,7 @@
 
       if (!filteredMatches || filteredMatches.length === 0) {
         StateStore.set({
-          validation: { status: 'error', message: 'No elements found' },
+          validation: { status: 'failure', message: 'No elements found' },
         });
         return;
       }
@@ -2174,22 +2185,43 @@
         listMode,
       };
 
-      // Action-specific parameters
+      // Action-specific parameters with validation
       if (action === 'type_text') {
-        const actionText = STATE.box?.querySelector('#__em_action_text')?.value || '';
+        const actionText = String(
+          STATE.box?.querySelector('#__em_action_text')?.value || '',
+        ).trim();
+        if (!actionText) {
+          StateStore.set({
+            validation: { status: 'failure', message: 'Text is required for type_text' },
+          });
+          return;
+        }
         payload.text = actionText;
       }
 
       if (action === 'press_keys') {
-        const actionKeys = STATE.box?.querySelector('#__em_action_keys')?.value || '';
+        const actionKeys = String(
+          STATE.box?.querySelector('#__em_action_keys')?.value || '',
+        ).trim();
+        if (!actionKeys) {
+          StateStore.set({
+            validation: { status: 'failure', message: 'Keys are required for press_keys' },
+          });
+          return;
+        }
         payload.keys = actionKeys;
       }
 
       if (action === 'scroll') {
         const direction = STATE.box?.querySelector('#__em_scroll_direction')?.value || 'down';
-        const distance = Number(STATE.box?.querySelector('#__em_scroll_distance')?.value) || 300;
+        const rawAmount = Number(STATE.box?.querySelector('#__em_scroll_distance')?.value);
+        // Clamp to 1-10 range (backend expects ticks, not pixels)
+        const amount = Math.max(
+          1,
+          Math.min(Math.round(Number.isFinite(rawAmount) ? rawAmount : 3), 10),
+        );
         payload.scrollDirection = direction;
-        payload.scrollAmount = distance;
+        payload.scrollAmount = amount;
       }
 
       if (['left_click', 'double_click', 'right_click'].includes(action)) {

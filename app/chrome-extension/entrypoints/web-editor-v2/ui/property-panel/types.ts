@@ -7,6 +7,7 @@
 
 import type { TransactionManager } from '../../core/transaction-manager';
 import type { PropsBridge } from '../../core/props-bridge';
+import type { FloatingPosition } from '../floating-drag';
 
 // =============================================================================
 // Tab Types
@@ -42,6 +43,18 @@ export interface PropertyPanelOptions {
    */
   onRequestClose?: () => void;
 
+  /**
+   * Initial floating position (viewport coordinates).
+   * When provided, the panel uses left/top positioning and becomes draggable.
+   */
+  initialPosition?: FloatingPosition | null;
+
+  /**
+   * Called whenever the floating position changes.
+   * Use null to indicate the panel is in its default anchored position.
+   */
+  onPositionChange?: (position: FloatingPosition | null) => void;
+
   /** Initial tab to display (default: 'design') */
   defaultTab?: PropertyPanelTab;
 }
@@ -66,6 +79,12 @@ export interface PropertyPanel {
 
   /** Force refresh the current controls (e.g., after external style change) */
   refresh(): void;
+
+  /** Get current floating position (viewport coordinates), null when anchored */
+  getPosition(): FloatingPosition | null;
+
+  /** Set floating position (viewport coordinates), pass null to reset to anchored */
+  setPosition(position: FloatingPosition | null): void;
 
   /** Cleanup and remove the panel */
   dispose(): void;

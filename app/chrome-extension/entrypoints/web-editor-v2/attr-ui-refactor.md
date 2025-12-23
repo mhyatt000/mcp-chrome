@@ -169,16 +169,21 @@
 - [x] 创建 `ui/property-panel/components/input-container.ts` 组件
 - [x] 将 hover/focus 样式移到容器级别（使用 `:focus-within`）
 
-### 2.2 更新各 Control 使用新容器
+### 2.2 更新各 Control 使用新容器 ✅ 已完成
 
 **需要更新的控件**：
 
-- [ ] `size-control.ts` - Width/Height
-- [ ] `spacing-control.ts` - Margin/Padding
-- [ ] `position-control.ts` - Top/Right/Bottom/Left/Z-Index
-- [ ] `layout-control.ts` - Gap
-- [ ] `typography-control.ts` - Font Size/Line Height
-- [ ] `appearance-control.ts` - Opacity/Border Radius/Border Width
+- [x] `size-control.ts` - Width/Height（2列布局 + W/H 前缀 + 动态单位后缀）
+- [x] `spacing-control.ts` - Margin/Padding（重构为 2x2 网格 + 方向图标 + 动态单位后缀）
+- [x] `position-control.ts` - Top/Right/Bottom/Left/Z-Index（T/R/B/L 前缀 + 动态单位后缀）
+- [x] `layout-control.ts` - Gap（图标前缀 + 动态单位后缀）
+- [x] `typography-control.ts` - Font Size/Line Height（动态单位后缀，line-height 智能显示）
+- [ ] `appearance-control.ts` - Opacity/Border Radius/Border Width（待实施）
+
+**已完成的共享模块**：
+
+- [x] 创建 `css-helpers.ts` 共享模块（extractUnitSuffix, hasExplicitUnit, normalizeLength）
+- [x] 所有控件使用共享 helper，消除重复代码
 
 ---
 
@@ -204,7 +209,7 @@
 
 ## 阶段四：功能组件实现（待实施）
 
-### 4.1 Flow 布局图标组 ✅ 组件完成
+### 4.1 Flow 布局图标组 ✅ 已完成
 
 **设计稿位置**：`attr-ui.html:133-156`
 **功能**：4 个图标按钮控制 `flex-direction`
@@ -220,13 +225,10 @@
 
 - [x] 创建 `ui/property-panel/components/icon-button-group.ts` 通用组件
 - [x] 在 `shadow-host.ts` 中添加 `.we-icon-button-group` 样式
+- [x] 在 `layout-control.ts` 中用图标组替换 Direction select
+- [x] 添加对应的 SVG 箭头图标（row/column/row-reverse/column-reverse）
 
-**待实施**：
-
-- [ ] 在 `layout-control.ts` 中用图标组替换 Direction select
-- [ ] 添加对应的 SVG 图标
-
-### 4.2 Alignment 九宫格 ✅ 组件完成
+### 4.2 Alignment 九宫格 ✅ 已完成
 
 **设计稿位置**：`attr-ui.html:166-208`
 **功能**：3x3 网格控制 `justify-content` + `align-items`
@@ -241,10 +243,8 @@
 
 - [x] 创建 `ui/property-panel/components/alignment-grid.ts` 组件
 - [x] 在 `shadow-host.ts` 中添加 `.we-alignment-grid` 样式
-
-**待实施**：
-
-- [ ] 替换 `layout-control.ts` 中的 Justify/Align select
+- [x] 替换 `layout-control.ts` 中的 Justify/Align select
+- [x] 使用 `beginMultiStyle` 实现两个属性的原子提交
 
 ### 4.3 修复 Color Picker ✅ 部分完成
 
@@ -354,24 +354,24 @@
 
 ## 实施进度
 
-| 阶段 | 任务               | 状态    | 备注                                        |
-| ---- | ------------------ | ------- | ------------------------------------------- |
-| 0.1  | 最小化 Bug 修复    | ✅      | 添加全局 `[hidden]` 规则                    |
-| 0.2  | 输入框优化         | ✅      | number-stepping + 真实值显示                |
-| 1.1  | 颜色方案重构       | ✅      | 白底 + 灰输入框 + inset focus               |
-| 1.2  | 字体与字号调整     | ✅      | 11px 基准 + Inter 字体                      |
-| 1.3  | 间距与边距调整     | ✅      | 更紧凑的布局                                |
-| 1.4  | 圆角与阴影         | ✅      | shadow-xl + 4px 圆角                        |
-| 1.5  | Group/Section 样式 | ✅      | 分隔线风格                                  |
-| 2.1  | 输入容器系统       | ✅      | 组件 + CSS 样式                             |
-| 2.2  | 更新 Controls      | 待实施  | 渐进式迁移各 control                        |
-| 3.1  | Tab 信息架构       | 待实施  |                                             |
-| 4.1  | Flow 图标组        | ✅ 组件 | icon-button-group.ts + CSS                  |
-| 4.2  | Alignment 九宫格   | ✅ 组件 | alignment-grid.ts + CSS                     |
-| 4.3  | 修复 Color Picker  | ✅ 部分 | showPicker 异常处理 + var() 解析            |
-| 5.1  | Shadow & Blur      | ✅      | effects-control.ts + 集成到 property-panel  |
-| 5.2  | 渐变编辑器         | ✅      | gradient-control.ts + 集成到 property-panel |
-| 5.3  | Token Pill         | 待实施  |                                             |
+| 阶段 | 任务               | 状态    | 备注                                         |
+| ---- | ------------------ | ------- | -------------------------------------------- |
+| 0.1  | 最小化 Bug 修复    | ✅      | 添加全局 `[hidden]` 规则                     |
+| 0.2  | 输入框优化         | ✅      | number-stepping + 真实值显示                 |
+| 1.1  | 颜色方案重构       | ✅      | 白底 + 灰输入框 + inset focus                |
+| 1.2  | 字体与字号调整     | ✅      | 11px 基准 + Inter 字体                       |
+| 1.3  | 间距与边距调整     | ✅      | 更紧凑的布局                                 |
+| 1.4  | 圆角与阴影         | ✅      | shadow-xl + 4px 圆角                         |
+| 1.5  | Group/Section 样式 | ✅      | 分隔线风格                                   |
+| 2.1  | 输入容器系统       | ✅      | 组件 + CSS 样式                              |
+| 2.2  | 更新 Controls      | ✅      | 所有主要控件已迁移，共享 css-helpers.ts      |
+| 3.1  | Tab 信息架构       | 待实施  |                                              |
+| 4.1  | Flow 图标组        | ✅      | icon-button-group.ts + 集成到 layout-control |
+| 4.2  | Alignment 九宫格   | ✅      | alignment-grid.ts + 集成到 layout-control    |
+| 4.3  | 修复 Color Picker  | ✅ 部分 | showPicker 异常处理 + var() 解析             |
+| 5.1  | Shadow & Blur      | ✅      | effects-control.ts + 集成到 property-panel   |
+| 5.2  | 渐变编辑器         | ✅      | gradient-control.ts + 集成到 property-panel  |
+| 5.3  | Token Pill         | 待实施  |                                              |
 
 ---
 

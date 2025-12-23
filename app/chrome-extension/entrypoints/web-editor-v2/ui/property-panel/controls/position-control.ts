@@ -10,6 +10,8 @@
 import { Disposer } from '../../../utils/disposables';
 import type { StyleTransactionHandle, TransactionManager } from '../../../core/transaction-manager';
 import type { DesignControl } from '../types';
+import { createInputContainer, type InputContainer } from '../components/input-container';
+import { extractUnitSuffix, normalizeLength } from './css-helpers';
 import { wireNumberStepping } from './number-stepping';
 
 // =============================================================================
@@ -23,6 +25,8 @@ interface FieldState {
   property: PositionProperty;
   element: FieldElement;
   handle: StyleTransactionHandle | null;
+  /** Container reference for input fields (null for select) */
+  container?: InputContainer;
 }
 
 // =============================================================================
@@ -53,14 +57,6 @@ function isFieldFocused(el: FieldElement): boolean {
   } catch {
     return false;
   }
-}
-
-function normalizeLength(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) return '';
-  if (/^-?(?:\d+|\d*\.\d+)$/.test(trimmed)) return `${trimmed}px`;
-  if (/^-?\d+\.$/.test(trimmed)) return `${trimmed.slice(0, -1)}px`;
-  return trimmed;
 }
 
 function normalizeZIndex(raw: string): string {
@@ -132,31 +128,47 @@ export function createPositionControl(options: PositionControlOptions): DesignCo
 
   positionRow.append(positionLabel, positionSelect);
 
+  // ---------------------------------------------------------------------------
+  // Helper: Create input container with prefix and optional unit suffix
+  // ---------------------------------------------------------------------------
+  function createPositionInput(
+    ariaLabel: string,
+    prefix: string,
+    hasUnitSuffix: boolean,
+  ): InputContainer {
+    return createInputContainer({
+      ariaLabel,
+      inputMode: hasUnitSuffix ? 'decimal' : 'numeric',
+      prefix,
+      suffix: hasUnitSuffix ? 'px' : null,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
   // Top/Right row
+  // ---------------------------------------------------------------------------
   const rowTR = document.createElement('div');
   rowTR.className = 'we-field-row';
 
-  const topInput = createInput('Top');
-  const rightInput = createInput('Right');
+  const topContainer = createPositionInput('Top', 'T', true);
+  const rightContainer = createPositionInput('Right', 'R', true);
 
-  const topField = createFieldWithLabel('T', topInput);
-  const rightField = createFieldWithLabel('R', rightInput);
+  rowTR.append(topContainer.root, rightContainer.root);
 
-  rowTR.append(topField, rightField);
-
+  // ---------------------------------------------------------------------------
   // Bottom/Left row
+  // ---------------------------------------------------------------------------
   const rowBL = document.createElement('div');
   rowBL.className = 'we-field-row';
 
-  const bottomInput = createInput('Bottom');
-  const leftInput = createInput('Left');
+  const bottomContainer = createPositionInput('Bottom', 'B', true);
+  const leftContainer = createPositionInput('Left', 'L', true);
 
-  const bottomField = createFieldWithLabel('B', bottomInput);
-  const leftField = createFieldWithLabel('L', leftInput);
+  rowBL.append(bottomContainer.root, leftContainer.root);
 
-  rowBL.append(bottomField, leftField);
-
+  // ---------------------------------------------------------------------------
   // Z-index row
+  // ---------------------------------------------------------------------------
   const zRow = document.createElement('div');
   zRow.className = 'we-field';
 
@@ -164,51 +176,48 @@ export function createPositionControl(options: PositionControlOptions): DesignCo
   zLabel.className = 'we-field-label';
   zLabel.textContent = 'Z-Index';
 
-  const zInput = createInput('z-index');
-
-  zRow.append(zLabel, zInput);
+  const zContainer = createPositionInput('Z-Index', 'Z', false);
+  zRow.append(zLabel, zContainer.root);
 
   // Wire up keyboard stepping for arrow up/down
-  wireNumberStepping(disposer, topInput, { mode: 'css-length' });
-  wireNumberStepping(disposer, rightInput, { mode: 'css-length' });
-  wireNumberStepping(disposer, bottomInput, { mode: 'css-length' });
-  wireNumberStepping(disposer, leftInput, { mode: 'css-length' });
-  wireNumberStepping(disposer, zInput, { mode: 'number', integer: true });
+  wireNumberStepping(disposer, topContainer.input, { mode: 'css-length' });
+  wireNumberStepping(disposer, rightContainer.input, { mode: 'css-length' });
+  wireNumberStepping(disposer, bottomContainer.input, { mode: 'css-length' });
+  wireNumberStepping(disposer, leftContainer.input, { mode: 'css-length' });
+  wireNumberStepping(disposer, zContainer.input, { mode: 'number', integer: true });
 
   root.append(positionRow, rowTR, rowBL, zRow);
   container.append(root);
   disposer.add(() => root.remove());
 
-  function createInput(ariaLabel: string): HTMLInputElement {
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'we-input';
-    input.autocomplete = 'off';
-    input.spellcheck = false;
-    input.setAttribute('aria-label', ariaLabel);
-    return input;
-  }
-
-  function createFieldWithLabel(labelText: string, input: HTMLInputElement): HTMLDivElement {
-    const field = document.createElement('div');
-    field.className = 'we-field';
-
-    const label = document.createElement('span');
-    label.className = 'we-field-label we-field-label--short';
-    label.textContent = labelText;
-
-    field.append(label, input);
-    return field;
-  }
-
   // Field state
   const fields: Record<PositionProperty, FieldState> = {
     position: { property: 'position', element: positionSelect, handle: null },
-    top: { property: 'top', element: topInput, handle: null },
-    right: { property: 'right', element: rightInput, handle: null },
-    bottom: { property: 'bottom', element: bottomInput, handle: null },
-    left: { property: 'left', element: leftInput, handle: null },
-    'z-index': { property: 'z-index', element: zInput, handle: null },
+    top: { property: 'top', element: topContainer.input, container: topContainer, handle: null },
+    right: {
+      property: 'right',
+      element: rightContainer.input,
+      container: rightContainer,
+      handle: null,
+    },
+    bottom: {
+      property: 'bottom',
+      element: bottomContainer.input,
+      container: bottomContainer,
+      handle: null,
+    },
+    left: {
+      property: 'left',
+      element: leftContainer.input,
+      container: leftContainer,
+      handle: null,
+    },
+    'z-index': {
+      property: 'z-index',
+      element: zContainer.input,
+      container: zContainer,
+      handle: null,
+    },
   };
 
   // ==========================================================================
@@ -250,6 +259,13 @@ export function createPositionControl(options: PositionControlOptions): DesignCo
   // Sync
   // ==========================================================================
 
+  /** Check if property is a length property (has unit suffix) */
+  function isLengthProperty(property: PositionProperty): boolean {
+    return (
+      property === 'top' || property === 'right' || property === 'bottom' || property === 'left'
+    );
+  }
+
   function syncField(property: PositionProperty, force = false): void {
     const field = fields[property];
     const el = field.element;
@@ -260,6 +276,10 @@ export function createPositionControl(options: PositionControlOptions): DesignCo
       if (el instanceof HTMLInputElement) {
         el.value = '';
         el.placeholder = '';
+        // Reset suffix to default
+        if (field.container) {
+          field.container.setSuffix(isLengthProperty(property) ? 'px' : null);
+        }
       } else {
         el.value = 'static';
       }
@@ -271,14 +291,17 @@ export function createPositionControl(options: PositionControlOptions): DesignCo
 
     if (el instanceof HTMLInputElement) {
       if (isEditing && !force) return;
-      // Display real value: prefer inline style, fallback to computed style
+
       const inlineValue = readInlineValue(target, property);
-      if (inlineValue) {
-        el.value = inlineValue;
-        el.placeholder = '';
-      } else {
-        el.value = readComputedValue(target, property);
-        el.placeholder = '';
+      const displayValue = inlineValue || readComputedValue(target, property);
+      el.value = displayValue;
+      el.placeholder = '';
+
+      // Update suffix to match current unit
+      if (field.container) {
+        field.container.setSuffix(
+          isLengthProperty(property) ? extractUnitSuffix(displayValue) : null,
+        );
       }
     } else {
       // Select

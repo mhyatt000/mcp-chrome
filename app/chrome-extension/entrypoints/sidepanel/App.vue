@@ -273,87 +273,133 @@
     <!-- Element Markers Tab -->
     <div v-show="activeTab === 'element-markers'" class="element-markers-content">
       <div class="px-4 py-4">
-        <!-- Add/Edit Marker Form -->
-        <div class="em-card mb-4">
-          <h3 class="em-section-title">{{ editingMarkerId ? '编辑标注' : '新增标注' }}</h3>
-
-          <form @submit.prevent="saveMarker" class="em-form">
-            <div class="em-form-row">
-              <div class="em-field">
-                <label class="em-field-label">名称</label>
-                <input
-                  v-model="markerForm.name"
-                  class="em-input"
-                  placeholder="例如: 登录按钮"
-                  required
+        <!-- Toolbar: Search + Add Button -->
+        <div class="em-toolbar">
+          <div class="em-search-wrapper">
+            <svg class="em-search-icon" viewBox="0 0 20 20" width="16" height="16">
+              <path
+                fill="currentColor"
+                d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+              />
+            </svg>
+            <input
+              v-model="markerSearch"
+              class="em-search-input"
+              placeholder="搜索标注名称、选择器..."
+              type="text"
+            />
+            <button
+              v-if="markerSearch"
+              class="em-search-clear"
+              type="button"
+              @click="markerSearch = ''"
+            >
+              <svg viewBox="0 0 20 20" width="14" height="14">
+                <path
+                  fill="currentColor"
+                  d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
                 />
-              </div>
-            </div>
+              </svg>
+            </button>
+          </div>
+          <button class="em-add-btn" @click="openMarkerEditor()" title="新增标注">
+            <svg viewBox="0 0 20 20" width="18" height="18">
+              <path
+                fill="currentColor"
+                d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+              />
+            </svg>
+          </button>
+        </div>
 
-            <div class="em-form-row em-form-row-multi">
-              <div class="em-field">
-                <label class="em-field-label">选择器类型</label>
-                <div class="em-select-wrapper">
-                  <select v-model="markerForm.selectorType" class="em-select">
-                    <option value="css">CSS Selector</option>
-                    <option value="xpath">XPath</option>
-                  </select>
+        <!-- Modal: Add/Edit Marker -->
+        <div v-if="markerEditorOpen" class="em-modal-overlay" @click.self="closeMarkerEditor">
+          <div class="em-modal">
+            <div class="em-modal-header">
+              <h3 class="em-modal-title">{{ editingMarkerId ? '编辑标注' : '新增标注' }}</h3>
+              <button class="em-modal-close" @click="closeMarkerEditor">
+                <svg viewBox="0 0 20 20" width="18" height="18">
+                  <path
+                    fill="currentColor"
+                    d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
+                  />
+                </svg>
+              </button>
+            </div>
+            <form @submit.prevent="saveMarker" class="em-form">
+              <div class="em-form-row">
+                <div class="em-field">
+                  <label class="em-field-label">名称</label>
+                  <input
+                    v-model="markerForm.name"
+                    class="em-input"
+                    placeholder="例如: 登录按钮"
+                    required
+                  />
                 </div>
               </div>
-              <div class="em-field">
-                <label class="em-field-label">匹配类型</label>
-                <div class="em-select-wrapper">
-                  <select v-model="markerForm.matchType" class="em-select">
-                    <option value="prefix">路径前缀</option>
-                    <option value="exact">精确匹配</option>
-                    <option value="host">域名</option>
-                  </select>
+
+              <div class="em-form-row em-form-row-multi">
+                <div class="em-field">
+                  <label class="em-field-label">选择器类型</label>
+                  <div class="em-select-wrapper">
+                    <select v-model="markerForm.selectorType" class="em-select">
+                      <option value="css">CSS Selector</option>
+                      <option value="xpath">XPath</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="em-field">
+                  <label class="em-field-label">匹配类型</label>
+                  <div class="em-select-wrapper">
+                    <select v-model="markerForm.matchType" class="em-select">
+                      <option value="prefix">路径前缀</option>
+                      <option value="exact">精确匹配</option>
+                      <option value="host">域名</option>
+                    </select>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div class="em-form-row">
-              <div class="em-field">
-                <label class="em-field-label">选择器</label>
-                <textarea
-                  v-model="markerForm.selector"
-                  class="em-textarea"
-                  placeholder="CSS 选择器或 XPath"
-                  rows="3"
-                  required
-                ></textarea>
+              <div class="em-form-row">
+                <div class="em-field">
+                  <label class="em-field-label">选择器</label>
+                  <textarea
+                    v-model="markerForm.selector"
+                    class="em-textarea"
+                    placeholder="CSS 选择器或 XPath"
+                    rows="3"
+                    required
+                  ></textarea>
+                </div>
               </div>
-            </div>
 
-            <div class="em-actions">
-              <button type="submit" class="em-btn em-btn-primary">
-                {{ editingMarkerId ? '更新' : '保存' }}
-              </button>
-              <button
-                v-if="editingMarkerId"
-                type="button"
-                class="em-btn em-btn-ghost"
-                @click="cancelEdit"
-              >
-                取消
-              </button>
-              <button type="button" class="em-btn em-btn-ghost" @click="resetForm"> 清空 </button>
-            </div>
-          </form>
+              <div class="em-modal-actions">
+                <button type="button" class="em-btn em-btn-ghost" @click="closeMarkerEditor">
+                  取消
+                </button>
+                <button type="submit" class="em-btn em-btn-primary">
+                  {{ editingMarkerId ? '更新' : '保存' }}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
 
         <!-- Markers List -->
-        <div v-if="markers.length > 0" class="em-list">
-          <!-- Statistics -->
-          <div class="em-stats-card">
-            <div class="em-stat-item">
-              <span class="em-stat-label">总标注数</span>
-              <span class="em-stat-value">{{ totalMarkersCount }}</span>
-            </div>
-            <div class="em-stat-item">
-              <span class="em-stat-label">域名数</span>
-              <span class="em-stat-value">{{ groupedMarkers.length }}</span>
-            </div>
+        <div v-if="filteredMarkers.length > 0" class="em-list">
+          <!-- Statistics (compact) -->
+          <div class="em-stats-bar">
+            <span class="em-stats-text">
+              <template v-if="markerSearch">
+                筛选出 <strong>{{ filteredMarkers.length }}</strong> 个标注 （共
+                {{ markers.length }} 个，{{ groupedMarkers.length }} 个域名）
+              </template>
+              <template v-else>
+                共 <strong>{{ markers.length }}</strong> 个标注，
+                <strong>{{ groupedMarkers.length }}</strong> 个域名
+              </template>
+            </span>
           </div>
 
           <!-- Grouped Markers by Domain -->
@@ -381,63 +427,73 @@
 
             <!-- URLs and Markers -->
             <div v-if="expandedDomains.has(domainGroup.domain)" class="em-domain-content">
-              <div v-for="urlGroup in domainGroup.urls" :key="urlGroup.url" class="em-url-group">
-                <div class="em-url-header">
-                  <span class="em-url-path">{{ urlGroup.url }}</span>
-                </div>
+              <div class="em-content-wrapper">
+                <div v-for="urlGroup in domainGroup.urls" :key="urlGroup.url" class="em-url-group">
+                  <div class="em-url-header">
+                    <svg class="em-url-icon" viewBox="0 0 16 16" width="12" height="12">
+                      <path
+                        fill="currentColor"
+                        d="M4 4a1 1 0 011-1h6a1 1 0 011 1v8a1 1 0 01-1 1H5a1 1 0 01-1-1V4zm2 1v1h4V5H6zm0 3v1h4V8H6z"
+                      />
+                    </svg>
+                    <span class="em-url-path">{{ urlGroup.url }}</span>
+                  </div>
 
-                <div v-for="marker in urlGroup.markers" :key="marker.id" class="em-marker-card">
-                  <div class="em-marker-header">
-                    <div class="em-marker-info">
-                      <h4 class="em-marker-name">{{ marker.name }}</h4>
-                      <code class="em-marker-selector" :title="marker.selector">{{
-                        marker.selector
-                      }}</code>
-                      <div class="em-marker-tags">
-                        <span class="em-tag">{{ marker.selectorType || 'css' }}</span>
-                        <span class="em-tag">{{ marker.matchType }}</span>
+                  <div class="em-markers-list">
+                    <div v-for="marker in urlGroup.markers" :key="marker.id" class="em-marker-item">
+                      <div class="em-marker-row-top">
+                        <span class="em-marker-name">{{ marker.name }}</span>
+                        <div class="em-marker-actions">
+                          <button
+                            class="em-action-btn em-action-verify"
+                            @click="validateMarker(marker)"
+                            title="验证"
+                          >
+                            <svg viewBox="0 0 24 24" width="14" height="14">
+                              <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                              />
+                            </svg>
+                          </button>
+                          <button
+                            class="em-action-btn em-action-edit"
+                            @click="editMarker(marker)"
+                            title="编辑"
+                          >
+                            <svg viewBox="0 0 24 24" width="14" height="14">
+                              <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                              />
+                            </svg>
+                          </button>
+                          <button
+                            class="em-action-btn em-action-delete"
+                            @click="deleteMarker(marker)"
+                            title="删除"
+                          >
+                            <svg viewBox="0 0 24 24" width="14" height="14">
+                              <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              />
+                            </svg>
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                    <div class="em-marker-actions">
-                      <button
-                        class="em-action-btn em-action-verify"
-                        @click="validateMarker(marker)"
-                        title="验证"
-                      >
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                          />
-                        </svg>
-                      </button>
-                      <button
-                        class="em-action-btn em-action-edit"
-                        @click="editMarker(marker)"
-                        title="编辑"
-                      >
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                          />
-                        </svg>
-                      </button>
-                      <button
-                        class="em-action-btn em-action-delete"
-                        @click="deleteMarker(marker)"
-                        title="删除"
-                      >
-                        <svg viewBox="0 0 24 24" width="18" height="18">
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                          />
-                        </svg>
-                      </button>
+                      <div class="em-marker-row-bottom">
+                        <code class="em-marker-selector" :title="marker.selector">{{
+                          marker.selector
+                        }}</code>
+                        <div class="em-marker-tags">
+                          <span class="em-tag">{{ marker.selectorType || 'css' }}</span>
+                          <span class="em-tag">{{ marker.matchType }}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -446,8 +502,20 @@
           </div>
         </div>
 
+        <!-- No search results -->
+        <div v-else-if="markers.length > 0 && filteredMarkers.length === 0" class="em-empty">
+          <p>未找到匹配的标注</p>
+          <button class="em-btn em-btn-ghost em-empty-btn" @click="markerSearch = ''">
+            清除搜索
+          </button>
+        </div>
+
+        <!-- Empty state -->
         <div v-else class="em-empty">
           <p>暂无标注元素</p>
+          <button class="em-btn em-btn-primary em-empty-btn" @click="openMarkerEditor()">
+            新增标注
+          </button>
         </div>
       </div>
     </div>
@@ -496,12 +564,26 @@ const markerForm = ref<UpsertMarkerRequest>({
   matchType: 'prefix',
 });
 const expandedDomains = ref<Set<string>>(new Set());
+const markerSearch = ref('');
+const markerEditorOpen = ref(false);
+
+// Filter markers based on search term
+const filteredMarkers = computed(() => {
+  const query = markerSearch.value.trim().toLowerCase();
+  if (!query) return markers.value;
+  return markers.value.filter((m) => {
+    const name = (m.name || '').toLowerCase();
+    const selector = (m.selector || '').toLowerCase();
+    const url = (m.url || '').toLowerCase();
+    return name.includes(query) || selector.includes(query) || url.includes(query);
+  });
+});
 
 // Group markers by domain and URL
 const groupedMarkers = computed(() => {
   const groups = new Map<string, Map<string, ElementMarker[]>>();
 
-  for (const marker of markers.value) {
+  for (const marker of filteredMarkers.value) {
     // Use pre-normalized fields from storage instead of reparsing URLs
     const domain = marker.host || '(本地文件)';
     const fullUrl = marker.url || '(未知URL)';
@@ -530,7 +612,7 @@ const groupedMarkers = computed(() => {
     .sort((a, b) => a.domain.localeCompare(b.domain));
 });
 
-const totalMarkersCount = computed(() => markers.value.length);
+const totalMarkersCount = computed(() => filteredMarkers.value.length);
 
 const filtered = computed(() => {
   const list = onlyBound.value ? flows.value.filter(isBoundToCurrent) : flows.value;
@@ -683,6 +765,29 @@ function openBuilder(opts: { flowId?: string; newFlow?: boolean }) {
 }
 
 // Element markers functions
+function openMarkerEditor(marker?: ElementMarker) {
+  if (marker) {
+    editingMarkerId.value = marker.id;
+    markerForm.value = {
+      url: marker.url,
+      name: marker.name,
+      selector: marker.selector,
+      selectorType: marker.selectorType || 'css',
+      listMode: marker.listMode,
+      matchType: marker.matchType || 'prefix',
+      action: marker.action,
+    };
+  } else {
+    resetForm();
+  }
+  markerEditorOpen.value = true;
+}
+
+function closeMarkerEditor() {
+  markerEditorOpen.value = false;
+  resetForm();
+}
+
 function resetForm() {
   markerForm.value = {
     url: currentPageUrl.value,
@@ -699,7 +804,11 @@ async function loadMarkers() {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     const tab = tabs[0];
     currentPageUrl.value = String(tab?.url || '');
-    markerForm.value.url = currentPageUrl.value;
+
+    // Only update form URL when not editing - prevents polluting edited marker's URL
+    if (!editingMarkerId.value) {
+      markerForm.value.url = currentPageUrl.value;
+    }
 
     // Load all markers from all pages
     const res: any = await chrome.runtime.sendMessage({
@@ -757,7 +866,7 @@ async function saveMarker() {
     }
 
     if (res?.success) {
-      resetForm();
+      closeMarkerEditor();
       await loadMarkers();
     }
   } catch (e) {
@@ -766,20 +875,11 @@ async function saveMarker() {
 }
 
 function editMarker(marker: ElementMarker) {
-  editingMarkerId.value = marker.id;
-  markerForm.value = {
-    url: marker.url,
-    name: marker.name,
-    selector: marker.selector,
-    selectorType: marker.selectorType,
-    listMode: marker.listMode,
-    matchType: marker.matchType,
-    action: marker.action,
-  };
+  openMarkerEditor(marker);
 }
 
 function cancelEdit() {
-  resetForm();
+  closeMarkerEditor();
 }
 
 async function deleteMarker(marker: ElementMarker) {
@@ -869,15 +969,6 @@ async function highlightInTab(marker: ElementMarker) {
   }
 }
 
-function getUrlDisplay(url: string) {
-  try {
-    const urlObj = new URL(url);
-    return urlObj.hostname + urlObj.pathname;
-  } catch {
-    return url;
-  }
-}
-
 function toggleDomain(domain: string) {
   if (expandedDomains.value.has(domain)) {
     expandedDomains.value.delete(domain);
@@ -894,6 +985,17 @@ watch(activeTab, async (newTab, oldTab) => {
   if (newTab === 'element-markers' && oldTab !== undefined) {
     await loadMarkers();
   }
+});
+
+// Auto-expand domains when search matches
+watch(markerSearch, (query) => {
+  if (!query.trim()) return;
+  // Expand all domains that have matching markers
+  const domainsToExpand = new Set<string>();
+  for (const group of groupedMarkers.value) {
+    domainsToExpand.add(group.domain);
+  }
+  expandedDomains.value = domainsToExpand;
 });
 
 onMounted(async () => {
@@ -945,66 +1047,10 @@ onUnmounted(() => {
   margin-left: 6px;
 }
 
-/* Element Markers Styles - Inspired by element-marker.js */
+/* Element Markers Styles - Using agent-theme tokens */
 .element-markers-content {
   padding-bottom: 24px;
-}
-
-.em-card {
-  background: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  padding: 20px;
-}
-
-.em-header-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.em-info-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.em-label {
-  font-size: 14px;
-  font-weight: 500;
-  color: #737373;
-}
-
-.em-value {
-  font-size: 14px;
-  color: #262626;
-  font-weight: 500;
-  flex: 1;
-  margin-left: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.em-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 32px;
-  height: 32px;
-  padding: 0 12px;
-  background: #2563eb;
-  color: #ffffff;
-  font-size: 16px;
-  font-weight: 600;
-  border-radius: 8px;
-}
-
-.em-section-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #262626;
-  margin-bottom: 16px;
+  color: var(--ac-text, #262626);
 }
 
 .em-form {
@@ -1034,44 +1080,44 @@ onUnmounted(() => {
 .em-field-label {
   font-size: 12px;
   font-weight: 500;
-  color: #737373;
+  color: var(--ac-text-subtle, #737373);
 }
 
 .em-input {
   width: 100%;
   height: 44px;
   padding: 0 16px;
-  background: #f5f5f5;
+  background: var(--ac-surface-muted, #f5f5f5);
   border: none;
-  border-radius: 10px;
+  border-radius: var(--ac-radius-inner, 10px);
   font-size: 14px;
-  color: #262626;
+  color: var(--ac-text, #262626);
   font-family: inherit;
   outline: none;
-  transition: background 150ms ease;
+  transition: background var(--ac-motion-fast, 150ms) ease;
 }
 
 .em-input:focus {
-  background: #e5e5e5;
+  background: var(--ac-hover-bg, #e5e5e5);
 }
 
 .em-textarea {
   width: 100%;
   min-height: 80px;
   padding: 12px 16px;
-  background: #f5f5f5;
+  background: var(--ac-surface-muted, #f5f5f5);
   border: none;
-  border-radius: 10px;
+  border-radius: var(--ac-radius-inner, 10px);
   font-size: 14px;
-  color: #262626;
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  color: var(--ac-text, #262626);
+  font-family: var(--ac-font-mono, 'Monaco', 'Menlo', 'Ubuntu Mono', monospace);
   outline: none;
-  transition: background 150ms ease;
+  transition: background var(--ac-motion-fast, 150ms) ease;
   resize: vertical;
 }
 
 .em-textarea:focus {
-  background: #e5e5e5;
+  background: var(--ac-hover-bg, #e5e5e5);
 }
 
 .em-select-wrapper {
@@ -1082,11 +1128,11 @@ onUnmounted(() => {
   width: 100%;
   height: 44px;
   padding: 0 40px 0 16px;
-  background: #f5f5f5;
+  background: var(--ac-surface-muted, #f5f5f5);
   border: none;
-  border-radius: 10px;
+  border-radius: var(--ac-radius-inner, 10px);
   font-size: 14px;
-  color: #262626;
+  color: var(--ac-text, #262626);
   font-family: inherit;
   outline: none;
   cursor: pointer;
@@ -1103,7 +1149,7 @@ onUnmounted(() => {
   height: 0;
   border-left: 5px solid transparent;
   border-right: 5px solid transparent;
-  border-top: 6px solid #737373;
+  border-top: 6px solid var(--ac-text-subtle, #737373);
   pointer-events: none;
 }
 
@@ -1117,31 +1163,31 @@ onUnmounted(() => {
   flex: 1;
   height: 44px;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--ac-radius-button, 10px);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 150ms ease;
+  transition: all var(--ac-motion-fast, 150ms) ease;
 }
 
 .em-btn-primary {
-  background: #2563eb;
-  color: #ffffff;
+  background: var(--ac-accent, #d97757);
+  color: var(--ac-accent-contrast, #ffffff);
 }
 
 .em-btn-primary:hover {
-  background: #1d4ed8;
+  background: var(--ac-accent-hover, #c4664a);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+  box-shadow: var(--ac-shadow-float, 0 4px 12px rgba(0, 0, 0, 0.15));
 }
 
 .em-btn-ghost {
-  background: #f5f5f5;
-  color: #404040;
+  background: var(--ac-surface-muted, #f5f5f5);
+  color: var(--ac-text, #404040);
 }
 
 .em-btn-ghost:hover {
-  background: #e5e5e5;
+  background: var(--ac-hover-bg, #e5e5e5);
 }
 
 .em-list {
@@ -1150,188 +1196,221 @@ onUnmounted(() => {
   gap: 12px;
 }
 
-.em-marker-card {
-  background: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  padding: 16px;
-  transition: box-shadow 150ms ease;
-}
-
-.em-marker-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-.em-marker-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.em-marker-info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.em-marker-name {
-  font-size: 16px;
-  font-weight: 600;
-  color: #262626;
-  margin: 0;
-}
-
-.em-marker-selector {
-  font-size: 13px;
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-  color: #525252;
-  background: #f5f5f5;
-  padding: 6px 10px;
-  border-radius: 6px;
-  max-width: 100%;
-  cursor: help;
-  display: block;
-  word-break: break-all;
-  overflow-wrap: break-word;
-  white-space: pre-wrap;
-  max-height: 120px;
-  overflow-y: auto;
-}
-
-.em-marker-tags {
-  display: flex;
-  gap: 6px;
-}
-
-.em-tag {
-  display: inline-block;
-  padding: 4px 10px;
-  background: #e5e5e5;
-  color: #525252;
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: 6px;
-}
-
-.em-tag-url {
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: help;
-}
-
-.em-marker-actions {
-  display: flex;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.em-action-btn {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 150ms ease;
-}
-
-.em-action-btn svg {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-}
-
-.em-action-verify {
-  background: #dbeafe;
-  color: #2563eb;
-}
-
-.em-action-verify:hover {
-  background: #bfdbfe;
-  transform: translateY(-1px);
-}
-
-.em-action-edit {
-  background: #f5f5f5;
-  color: #525252;
-}
-
-.em-action-edit:hover {
-  background: #e5e5e5;
-  transform: translateY(-1px);
-}
-
-.em-action-delete {
-  background: #fee2e2;
-  color: #ef4444;
-}
-
-.em-action-delete:hover {
-  background: #fecaca;
-  transform: translateY(-1px);
-}
-
 .em-empty {
   text-align: center;
   padding: 48px 20px;
-  color: #a3a3a3;
+  color: var(--ac-text-subtle, #a3a3a3);
   font-size: 14px;
 }
 
-/* Statistics Card */
-.em-stats-card {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 12px;
-  padding: 20px;
-  margin-bottom: 20px;
+/* Toolbar */
+.em-toolbar {
   display: flex;
-  justify-content: space-around;
-  gap: 20px;
-}
-
-.em-stat-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
   gap: 8px;
-}
-
-.em-stat-label {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.9);
-  font-weight: 500;
-}
-
-.em-stat-value {
-  font-size: 32px;
-  font-weight: 700;
-  color: #ffffff;
-  line-height: 1;
-}
-
-/* Domain Group */
-.em-domain-group {
   margin-bottom: 16px;
+  align-items: center;
+}
+
+.em-search-wrapper {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.em-search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--ac-text-muted, #737373);
+  pointer-events: none;
+}
+
+.em-search-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 36px;
+  background: var(--ac-surface-muted, #f5f5f5);
+  border: none;
+  border-radius: var(--ac-radius-inner, 10px);
+  font-size: 14px;
+  color: var(--ac-text, #262626);
+  outline: none;
+  transition: background var(--ac-motion-fast, 150ms) ease;
+}
+
+.em-search-input:focus {
+  background: var(--ac-hover-bg, #e5e5e5);
+}
+
+.em-search-input::placeholder {
+  color: var(--ac-text-muted, #a3a3a3);
+}
+
+.em-search-clear {
+  position: absolute;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  color: var(--ac-text-muted, #737373);
+  cursor: pointer;
+  transition: all var(--ac-motion-fast, 150ms) ease;
+}
+
+.em-search-clear:hover {
+  background: var(--ac-hover-bg, #e5e5e5);
+  color: var(--ac-text, #262626);
+}
+
+.em-add-btn {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ac-accent, #d97757);
+  border: none;
+  border-radius: var(--ac-radius-button, 10px);
+  color: var(--ac-accent-contrast, #ffffff);
+  cursor: pointer;
+  transition: all var(--ac-motion-fast, 150ms) ease;
+  flex-shrink: 0;
+}
+
+.em-add-btn:hover {
+  background: var(--ac-accent-hover, #c4664a);
+  transform: translateY(-1px);
+  box-shadow: var(--ac-shadow-float, 0 4px 12px rgba(0, 0, 0, 0.15));
+}
+
+/* Modal */
+.em-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 150ms ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.em-modal {
+  width: calc(100% - 32px);
+  max-width: 480px;
+  max-height: calc(100vh - 64px);
+  background: var(--ac-surface, #ffffff);
+  border-radius: var(--ac-radius-card, 12px);
+  box-shadow: var(--ac-shadow-float, 0 8px 32px rgba(0, 0, 0, 0.2));
+  overflow: hidden;
+  animation: slideUp 200ms ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.em-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--ac-border, #e5e5e5);
+}
+
+.em-modal-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ac-text, #262626);
+  margin: 0;
+}
+
+.em-modal-close {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--ac-radius-button, 8px);
+  color: var(--ac-text-muted, #737373);
+  cursor: pointer;
+  transition: all var(--ac-motion-fast, 150ms) ease;
+}
+
+.em-modal-close:hover {
+  background: var(--ac-hover-bg, #f5f5f5);
+  color: var(--ac-text, #262626);
+}
+
+.em-modal .em-form {
+  padding: 20px;
+}
+
+.em-modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.em-modal-actions .em-btn {
+  flex: none;
+  min-width: 80px;
+}
+
+/* Statistics Bar (compact) */
+.em-stats-bar {
+  padding: 10px 16px;
+  background: var(--ac-surface-muted, #f5f5f5);
+  border-radius: var(--ac-radius-inner, 8px);
+}
+
+.em-stats-text {
+  font-size: 13px;
+  color: var(--ac-text-muted, #737373);
+}
+
+.em-stats-text strong {
+  color: var(--ac-text, #262626);
+  font-weight: 600;
 }
 
 .em-domain-header {
-  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-  border-radius: 12px;
-  padding: 16px 20px;
+  background: var(--ac-surface, #ffffff);
+  border: var(--ac-border-width, 1px) solid var(--ac-border, #e7e5e4);
+  border-radius: var(--ac-radius-card, 12px);
+  padding: 6px 12px;
   cursor: pointer;
-  transition: all 150ms ease;
+  transition: all var(--ac-motion-fast, 150ms) ease;
   user-select: none;
 }
 
 .em-domain-header:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  background: var(--ac-hover-bg, #f5f5f4);
+  box-shadow: var(--ac-shadow-float, 0 4px 12px rgba(0, 0, 0, 0.1));
 }
 
 .em-domain-info {
@@ -1342,8 +1421,8 @@ onUnmounted(() => {
 
 .em-domain-icon {
   flex-shrink: 0;
-  color: #525252;
-  transition: transform 150ms ease;
+  color: var(--ac-text-muted, #525252);
+  transition: transform var(--ac-motion-fast, 150ms) ease;
 }
 
 .em-domain-icon-expanded {
@@ -1357,23 +1436,22 @@ onUnmounted(() => {
 .em-domain-name {
   font-size: 16px;
   font-weight: 600;
-  color: #262626;
+  color: var(--ac-text, #262626);
   margin: 0;
   flex: 1;
 }
 
 .em-domain-count {
   font-size: 13px;
-  color: #737373;
-  background: rgba(255, 255, 255, 0.6);
+  color: var(--ac-text-muted, #737373);
+  background: var(--ac-surface-muted, rgba(255, 255, 255, 0.6));
   padding: 4px 12px;
-  border-radius: 12px;
+  border-radius: var(--ac-radius-button, 12px);
   font-weight: 500;
 }
 
 /* Domain Content */
 .em-domain-content {
-  padding: 12px 0 0 0;
   animation: slideDown 200ms ease-out;
 }
 
@@ -1388,32 +1466,181 @@ onUnmounted(() => {
   }
 }
 
+/* Content wrapper with left border for visual hierarchy */
+.em-content-wrapper {
+  margin-left: 8px;
+  margin-top: 8px;
+  padding-left: 12px;
+  border-left: 2px solid var(--ac-border, #e5e5e5);
+}
+
 /* URL Group */
 .em-url-group {
   margin-bottom: 12px;
 }
 
+.em-url-group:last-child {
+  margin-bottom: 0;
+}
+
 .em-url-header {
-  padding: 8px 16px;
-  background: #f9fafb;
-  border-radius: 8px;
-  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+}
+
+.em-url-icon {
+  color: var(--ac-text-muted, #a3a3a3);
+  flex-shrink: 0;
 }
 
 .em-url-path {
-  font-size: 13px;
-  color: #525252;
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 12px;
+  color: var(--ac-text-muted, #737373);
+  font-family: var(--ac-font-mono, 'Monaco', 'Menlo', 'Ubuntu Mono', monospace);
   word-break: break-all;
+  line-height: 1.4;
 }
 
-/* Adjust marker card in group context */
-.em-url-group .em-marker-card {
-  margin-left: 16px;
-  margin-bottom: 8px;
+/* Markers List */
+.em-markers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.em-url-group .em-marker-card:last-child {
+/* Marker Item - Two row layout */
+.em-marker-item {
+  padding: 8px 10px;
+  border-radius: var(--ac-radius-inner, 6px);
+  background: var(--ac-hover-bg, rgba(0, 0, 0, 0.03));
+  margin-bottom: 4px;
+}
+
+.em-marker-item:last-child {
   margin-bottom: 0;
+}
+
+.em-marker-item:hover {
+  background: var(--ac-hover-bg, rgba(0, 0, 0, 0.05));
+}
+
+/* Top row: name + actions */
+.em-marker-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.em-marker-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ac-text, #262626);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.em-marker-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.em-action-btn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--ac-radius-button, 6px);
+  cursor: pointer;
+  transition: all var(--ac-motion-fast, 150ms) ease;
+}
+
+.em-action-btn svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.em-action-btn.em-action-verify {
+  background: var(--ac-accent-subtle, rgba(217, 119, 87, 0.1));
+  color: var(--ac-accent, #d97757);
+}
+
+.em-action-btn.em-action-verify:hover {
+  background: var(--ac-accent-subtle, rgba(217, 119, 87, 0.18));
+}
+
+.em-action-btn.em-action-edit {
+  background: var(--ac-surface-muted, #f5f5f5);
+  color: var(--ac-text-muted, #737373);
+}
+
+.em-action-btn.em-action-edit:hover {
+  background: var(--ac-hover-bg, #e5e5e5);
+  color: var(--ac-text, #262626);
+}
+
+.em-action-btn.em-action-delete {
+  background: var(--ac-danger-subtle, rgba(239, 68, 68, 0.08));
+  color: var(--ac-danger, #ef4444);
+}
+
+.em-action-btn.em-action-delete:hover {
+  background: var(--ac-danger-subtle, rgba(239, 68, 68, 0.15));
+}
+
+/* Bottom row: selector + tags */
+.em-marker-row-bottom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.em-marker-selector {
+  font-size: 11px;
+  font-family: var(--ac-font-mono, 'Monaco', 'Menlo', 'Ubuntu Mono', monospace);
+  color: var(--ac-text-muted, #737373);
+  background: var(--ac-surface-muted, #f5f5f5);
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.em-marker-tags {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.em-tag {
+  font-size: 9px;
+  padding: 2px 5px;
+  background: transparent;
+  color: var(--ac-text-muted, #a3a3a3);
+  border: 1px solid var(--ac-border, #e5e5e5);
+  border-radius: 3px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* Empty state button */
+.em-empty-btn {
+  margin-top: 16px;
+  width: auto;
+  padding: 0 24px;
 }
 </style>
