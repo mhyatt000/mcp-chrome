@@ -1,3 +1,3 @@
-import { tryRegisterUserLevelHost } from './utils';
+import { registerUserLevelHostWithNodePath } from './utils';
 
-tryRegisterUserLevelHost();
+registerUserLevelHostWithNodePath();

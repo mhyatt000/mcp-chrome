@@ -32,6 +32,14 @@ export default tseslint.config(
 
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  // Global rule adjustments
+  {
+    // Allow intentionally empty catch blocks (common in extension code),
+    // while keeping other empty blocks reported.
+    rules: {
+      'no-empty': ['error', { allowEmptyCatch: true }],
+    },
+  },
   {
     files: ['app/**/*.{js,jsx,ts,tsx}', 'packages/**/*.{js,jsx,ts,tsx}'],
     ignores: ['**/workers/**'], // Additional ignores for this specific config

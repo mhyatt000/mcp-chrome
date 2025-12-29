@@ -1,8 +1,47 @@
 # 🚀 Installation and Connection Issues
 
-### If Connection Fails After Clicking the Connect Button on the Extension
+## Quick Diagnosis
 
-1. **Check if mcp-chrome-bridge is installed successfully**, ensure it's globally installed
+Run the diagnostic tool to identify common issues:
+
+```bash
+mcp-chrome-bridge doctor
+```
+
+To automatically fix common issues:
+
+```bash
+mcp-chrome-bridge doctor --fix
+```
+
+## Export Report for GitHub Issues
+
+If you need to open an issue, export a diagnostic report:
+
+```bash
+# Print Markdown report to terminal (copy/paste into GitHub Issue)
+mcp-chrome-bridge report
+
+# Write to a file
+mcp-chrome-bridge report --output mcp-report.md
+
+# Copy directly to clipboard
+mcp-chrome-bridge report --copy
+```
+
+By default, usernames, paths, and tokens are redacted. Use `--no-redact` if you're comfortable sharing full paths.
+
+## If Connection Fails After Clicking the Connect Button on the Extension
+
+1. **Run the diagnostic tool first**
+
+```bash
+mcp-chrome-bridge doctor
+```
+
+This will check installation, manifest, permissions, and Node.js path.
+
+2. **Check if mcp-chrome-bridge is installed successfully**, ensure it's globally installed
 
 ```bash
 mcp-chrome-bridge -V
@@ -18,10 +57,12 @@ Mac path: /Users/xxx/Library/Application\ Support/Google/Chrome/NativeMessagingH
 
 If the npm package is installed correctly, a file named `com.chromemcp.nativehost.json` should be generated in this directory
 
-3. **Check if there are logs in the npm package installation directory**
-   You need to check your installation path (if unclear, open the manifest file in step 2, the path field shows the installation directory). For example, if the installation path is as follows, check the log contents:
+3. **Check logs**
+   Logs are now stored in user-writable directories:
 
-C:\Users\admin\AppData\Local\nvm\v20.19.2\node_modules\mcp-chrome-bridge\dist\logs
+- **macOS**: `~/Library/Logs/mcp-chrome-bridge/`
+- **Windows**: `%LOCALAPPDATA%\mcp-chrome-bridge\logs\`
+- **Linux**: `~/.local/state/mcp-chrome-bridge/logs/`
 
 <img width="804" alt="Screenshot 2025-06-11 15 09 41" src="https://github.com/user-attachments/assets/ce7b7c94-7c84-409a-8210-c9317823aae1" />
 
@@ -30,4 +71,25 @@ C:\Users\admin\AppData\Local\nvm\v20.19.2\node_modules\mcp-chrome-bridge\dist\lo
 
 `xxx/node_modules/mcp-chrome-bridge/dist/run_host.sh`
 
-Check if this script has execution permissions
+Check if this script has execution permissions. Run to fix:
+
+```bash
+mcp-chrome-bridge fix-permissions
+```
+
+5. **Node.js not found**
+   If you use a Node version manager (nvm, volta, asdf, fnm), the wrapper script may not find Node.js. Set the `CHROME_MCP_NODE_PATH` environment variable:
+
+```bash
+export CHROME_MCP_NODE_PATH=/path/to/your/node
+```
+
+Or run `mcp-chrome-bridge doctor --fix` to write the current Node path.
+
+## Log Locations
+
+Wrapper logs are now stored in user-writable locations:
+
+- **macOS**: `~/Library/Logs/mcp-chrome-bridge/`
+- **Windows**: `%LOCALAPPDATA%\mcp-chrome-bridge\logs\`
+- **Linux**: `~/.local/state/mcp-chrome-bridge/logs/`

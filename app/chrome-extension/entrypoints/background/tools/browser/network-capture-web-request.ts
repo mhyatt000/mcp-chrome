@@ -202,31 +202,31 @@ class NetworkCaptureStartTool extends BaseBrowserToolExecutor {
 
   /**
    * Determine whether a request should be filtered (based on URL)
+   * Uses full URL substring match to support patterns like 'facebook.com/tr'
    */
   private shouldFilterRequest(url: string, includeStatic: boolean): boolean {
-    try {
-      const urlObj = new URL(url);
+    const normalizedUrl = String(url || '').toLowerCase();
+    if (!normalizedUrl) return false;
 
-      // Check if it's an ad or analytics domain
-      if (AD_ANALYTICS_DOMAINS.some((domain) => urlObj.hostname.includes(domain))) {
-        console.log(`NetworkCaptureV2: Filtering ad/analytics domain: ${urlObj.hostname}`);
-        return true;
-      }
+    // Check if it's an ad or analytics domain (full URL substring match)
+    if (AD_ANALYTICS_DOMAINS.some((pattern) => normalizedUrl.includes(pattern))) {
+      return true;
+    }
 
-      // If not including static resources, check extensions
-      if (!includeStatic) {
+    // If not including static resources, check extensions
+    if (!includeStatic) {
+      try {
+        const urlObj = new URL(url);
         const path = urlObj.pathname.toLowerCase();
         if (STATIC_RESOURCE_EXTENSIONS.some((ext) => path.endsWith(ext))) {
-          console.log(`NetworkCaptureV2: Filtering static resource by extension: ${path}`);
           return true;
         }
+      } catch {
+        return false;
       }
-
-      return false;
-    } catch (e) {
-      console.error('NetworkCaptureV2: Error filtering URL:', e);
-      return false;
     }
+
+    return false;
   }
 
   /**
@@ -345,9 +345,14 @@ class NetworkCaptureStartTool extends BaseBrowserToolExecutor {
   }
 
   /**
-   * Set up request listeners
+   * Set up request listeners (idempotent - won't add duplicate listeners)
    */
   private setupListeners(): void {
+    // Skip if listeners are already set up
+    if (this.listeners.onBeforeRequest) {
+      return;
+    }
+
     // Before request is sent
     this.listeners.onBeforeRequest = (details: chrome.webRequest.WebRequestBodyDetails) => {
       const captureInfo = this.captureData.get(details.tabId);

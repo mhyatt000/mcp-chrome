@@ -56,6 +56,11 @@ export const SUCCESS_MESSAGES = {
   SERVER_STOPPED: 'Server stopped successfully',
 } as const;
 
+// External Links
+export const LINKS = {
+  TROUBLESHOOTING: 'https://github.com/hangwin/mcp-chrome/blob/master/docs/TROUBLESHOOTING.md',
+} as const;
+
 // File Extensions and MIME Types
 export const FILE_TYPES = {
   STATIC_EXTENSIONS: [
@@ -77,12 +82,128 @@ export const FILE_TYPES = {
 
 // Network Filtering
 export const NETWORK_FILTERS = {
+  // Substring match against full URL (not just hostname) to support patterns like 'facebook.com/tr'
   EXCLUDED_DOMAINS: [
+    // Google
     'google-analytics.com',
     'googletagmanager.com',
-    'facebook.com',
+    'analytics.google.com',
     'doubleclick.net',
     'googlesyndication.com',
+    'googleads.g.doubleclick.net',
+    'stats.g.doubleclick.net',
+    'adservice.google.com',
+    'pagead2.googlesyndication.com',
+    // Amazon
+    'amazon-adsystem.com',
+    // Microsoft
+    'bat.bing.com',
+    'clarity.ms',
+    // Facebook
+    'connect.facebook.net',
+    'facebook.com/tr',
+    // Twitter
+    'analytics.twitter.com',
+    'ads-twitter.com',
+    // Other ad networks
+    'ads.yahoo.com',
+    'adroll.com',
+    'adnxs.com',
+    'criteo.com',
+    'quantserve.com',
+    'scorecardresearch.com',
+    // Analytics & session recording
+    'segment.io',
+    'amplitude.com',
+    'mixpanel.com',
+    'optimizely.com',
+    'static.hotjar.com',
+    'script.hotjar.com',
+    'crazyegg.com',
+    'clicktale.net',
+    'mouseflow.com',
+    'fullstory.com',
+    // LinkedIn (tracking pixels)
+    'linkedin.com/px',
+  ],
+  // Static resource extensions (used when includeStatic=false)
+  STATIC_RESOURCE_EXTENSIONS: [
+    '.jpg',
+    '.jpeg',
+    '.png',
+    '.gif',
+    '.svg',
+    '.webp',
+    '.ico',
+    '.bmp',
+    '.cur',
+    '.css',
+    '.scss',
+    '.less',
+    '.js',
+    '.jsx',
+    '.ts',
+    '.tsx',
+    '.map',
+    '.woff',
+    '.woff2',
+    '.ttf',
+    '.eot',
+    '.otf',
+    '.mp3',
+    '.mp4',
+    '.avi',
+    '.mov',
+    '.wmv',
+    '.flv',
+    '.webm',
+    '.ogg',
+    '.wav',
+    '.pdf',
+    '.zip',
+    '.rar',
+    '.7z',
+    '.iso',
+    '.dmg',
+    '.doc',
+    '.docx',
+    '.xls',
+    '.xlsx',
+    '.ppt',
+    '.pptx',
+  ],
+  // MIME types treated as static/binary (filtered when includeStatic=false)
+  STATIC_MIME_TYPES_TO_FILTER: [
+    'image/',
+    'font/',
+    'audio/',
+    'video/',
+    'text/css',
+    'text/javascript',
+    'application/javascript',
+    'application/x-javascript',
+    'application/pdf',
+    'application/zip',
+    'application/octet-stream',
+  ],
+  // API-like MIME types (never filtered by MIME)
+  API_MIME_TYPES: [
+    'application/json',
+    'application/xml',
+    'text/xml',
+    'text/plain',
+    'text/event-stream',
+    'application/x-www-form-urlencoded',
+    'application/graphql',
+    'application/grpc',
+    'application/protobuf',
+    'application/x-protobuf',
+    'application/x-json',
+    'application/ld+json',
+    'application/problem+json',
+    'application/problem+xml',
+    'application/soap+xml',
+    'application/vnd.api+json',
   ],
   STATIC_RESOURCE_TYPES: ['stylesheet', 'image', 'font', 'media', 'other'],
 } as const;
@@ -99,9 +220,21 @@ export const SEMANTIC_CONFIG = {
 // Storage Keys
 export const STORAGE_KEYS = {
   SERVER_STATUS: 'serverStatus',
+  NATIVE_SERVER_PORT: 'nativeServerPort',
+  NATIVE_AUTO_CONNECT_ENABLED: 'nativeAutoConnectEnabled',
   SEMANTIC_MODEL: 'selectedModel',
   USER_PREFERENCES: 'userPreferences',
   VECTOR_INDEX: 'vectorIndex',
+  USERSCRIPTS: 'userscripts',
+  USERSCRIPTS_DISABLED: 'userscripts_disabled',
+  // Record & Replay storage keys
+  RR_FLOWS: 'rr_flows',
+  RR_RUNS: 'rr_runs',
+  RR_PUBLISHED: 'rr_published_flows',
+  RR_SCHEDULES: 'rr_schedules',
+  RR_TRIGGERS: 'rr_triggers',
+  // Persistent recording state (guards resume across navigations/service worker restarts)
+  RR_RECORDING_STATE: 'rr_recording_state',
 } as const;
 
 // Notification Configuration

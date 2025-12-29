@@ -17,7 +17,7 @@ We welcome contributions in many forms:
 
 ### Prerequisites
 
-- **Node.js 18.19.0+** and **pnpm or npm** (latest version)
+- **Node.js 20+** and **pnpm or npm** (latest version)
 - **Chrome/Chromium** browser for testing
 - **Git** for version control
 - **Rust** (for WASM development, optional)
@@ -121,13 +121,11 @@ git checkout -b feature/your-feature-name
 ```
 
 2. **Make your changes**
-
    - Follow the code style guidelines
    - Add tests for new functionality
    - Update documentation if needed
 
 3. **Test your changes**
-
    - Ensure all existing tests pass
    - Test the Chrome extension manually
    - Verify MCP protocol compatibility

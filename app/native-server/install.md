@@ -7,12 +7,12 @@
 Chrome MCP Bridge 的安装和注册流程如下：
 
 ```
-npm install -g chrome-mcp-bridge
+npm install -g mcp-chrome-bridge
 └─ postinstall.js
    ├─ 复制可执行文件到 npm_prefix/bin   ← 总是可写（用户或root权限）
    ├─ 尝试用户级别注册                  ← 无需sudo，大多数情况下成功
-   └─ 如果失败 ➜ 提示用户运行 chrome-mcp-bridge register --system
-      └─ 使用sudo-prompt自动提权 → 写入系统级清单文件
+   └─ 如果失败 ➜ 提示用户运行 mcp-chrome-bridge register --system
+      └─ 需要手动使用管理员权限运行
 ```
 
 上面的流程图展示了从全局安装开始，到最终完成注册的完整过程。
@@ -22,7 +22,7 @@ npm install -g chrome-mcp-bridge
 ### 1. 全局安装
 
 ```bash
-npm install -g chrome-mcp-bridge
+npm install -g mcp-chrome-bridge
 ```
 
 安装完成后，系统会自动尝试在用户目录中注册 Native Messaging 主机。这不需要管理员权限，是推荐的安装方式。
@@ -47,7 +47,13 @@ npm install -g chrome-mcp-bridge
 如果自动注册失败，或者您想手动注册，可以运行：
 
 ```bash
-chrome-mcp-bridge register
+mcp-chrome-bridge register
+```
+
+**推荐：运行诊断工具检查问题：**
+
+```bash
+mcp-chrome-bridge doctor
 ```
 
 ### 3. 系统级别注册
@@ -59,10 +65,14 @@ chrome-mcp-bridge register
 #### 方式一：使用 `--system` 参数（推荐）
 
 ```bash
-chrome-mcp-bridge register --system
+# macOS/Linux
+sudo mcp-chrome-bridge register --system
+
+# Windows (以管理员身份运行命令提示符)
+mcp-chrome-bridge register --system
 ```
 
-这将使用 `sudo-prompt` 自动提升权限，无需手动输入 `sudo` 命令。
+系统级安装需要管理员权限才能写入系统目录和注册表。
 
 #### 方式二：直接使用管理员权限
 
@@ -70,14 +80,14 @@ chrome-mcp-bridge register --system
 以管理员身份运行命令提示符或 PowerShell，然后执行：
 
 ```
-chrome-mcp-bridge register
+mcp-chrome-bridge register
 ```
 
 **macOS/Linux**：
 使用 sudo 命令：
 
 ```
-sudo chrome-mcp-bridge register
+sudo mcp-chrome-bridge register
 ```
 
 ## 注册流程详解
@@ -86,19 +96,17 @@ sudo chrome-mcp-bridge register
 
 ```
 注册流程
-├─ 用户级别注册 (chrome-mcp-bridge register)
+├─ 用户级别注册 (mcp-chrome-bridge register)
 │  ├─ 获取用户级别清单路径
 │  ├─ 创建用户目录
 │  ├─ 生成清单内容
 │  ├─ 写入清单文件
 │  └─ Windows平台：创建用户级注册表项
 │
-└─ 系统级别注册 (chrome-mcp-bridge register --system)
+└─ 系统级别注册 (mcp-chrome-bridge register --system)
    ├─ 检查是否有管理员权限
    │  ├─ 有权限 → 直接创建系统目录和写入清单
-   │  └─ 无权限 → 使用sudo-prompt提权
-   │     ├─ 创建临时清单文件
-   │     └─ 复制到系统目录
+   │  └─ 无权限 → 提示用户使用管理员权限运行
    └─ Windows平台：创建系统级注册表项
 ```
 
@@ -106,15 +114,12 @@ sudo chrome-mcp-bridge register
 
 ```
 manifest.json
-├─ name: "com.chrome-mcp.native-host"
+├─ name: "com.chromemcp.nativehost"
 ├─ description: "Node.js Host for Browser Bridge Extension"
-├─ path: "/path/to/node"              ← Node.js可执行文件路径
+├─ path: "/path/to/run_host.sh"       ← 启动脚本路径
 ├─ type: "stdio"                      ← 通信类型
-├─ allowed_origins: [                 ← 允许连接的扩展
-│  "chrome-extension://扩展ID/"
-└─ args: [                            ← 启动参数
-   "/path/to/chrome-mcp-bridge",
-   "native"
+└─ allowed_origins: [                 ← 允许连接的扩展
+   "chrome-extension://扩展ID/"
 ]
 ```
 
@@ -141,10 +146,9 @@ manifest.json
    - 设置适当的权限
    - 在 Windows 上创建系统级注册表项
 3. 如果没有管理员权限：
-   - 使用 `sudo-prompt` 提升权限
-   - 创建临时清单文件
-   - 复制到系统目录
-   - 在 Windows 上创建系统级注册表项
+   - 提示用户使用管理员权限重新运行命令
+   - macOS/Linux: `sudo mcp-chrome-bridge register --system`
+   - Windows: 以管理员身份运行命令提示符
 
 ## 验证安装
 
@@ -170,13 +174,11 @@ manifest.json
 安装完成后，您可以通过以下方式验证安装是否成功：
 
 1. 检查清单文件是否存在于相应目录
-
    - 用户级别：检查用户目录下的清单文件
    - 系统级别：检查系统目录下的清单文件
    - 确认清单文件内容是否正确
 
 2. 在 Chrome 中安装对应的扩展
-
    - 确保扩展已正确安装
    - 确保扩展有 `nativeMessaging` 权限
 
@@ -198,9 +200,9 @@ manifest.json
 │  ├─ 执行权限问题 (macOS/Linux)
 │  │  ├─ "Permission denied" 错误
 │  │  ├─ "Native host has exited" 错误
-│  │  └─ 运行 chrome-mcp-bridge fix-permissions
+│  │  └─ 运行 mcp-chrome-bridge fix-permissions
 │  │
-│  └─ 尝试 chrome-mcp-bridge register --system
+│  └─ 尝试 mcp-chrome-bridge register --system
 │
 ├─ 路径问题
 │  ├─ 检查Node.js安装 (node -v)
@@ -220,12 +222,10 @@ manifest.json
 如果安装过程中遇到问题，请尝试以下步骤：
 
 1. 确保 Node.js 已正确安装
-
    - 运行 `node -v` 和 `npm -v` 检查版本
-   - 确保 Node.js 版本 >= 14.x
+   - 确保 Node.js 版本 >= 20.x
 
 2. 检查是否有足够的权限创建文件和目录
-
    - 用户级别安装需要对用户目录有写入权限
    - 系统级别安装需要管理员/root权限
 
@@ -234,7 +234,6 @@ manifest.json
    **macOS/Linux 平台**：
 
    **问题描述**：
-
    - npm 安装通常会保留文件权限，但 pnpm 可能不会
    - 可能遇到 "Permission denied" 或 "Native host has exited" 错误
    - Chrome 扩展无法启动 native host 进程
@@ -244,27 +243,32 @@ manifest.json
    a) **使用内置修复命令（推荐）**：
 
    ```bash
-   chrome-mcp-bridge fix-permissions
+   mcp-chrome-bridge fix-permissions
    ```
 
-   b) **手动设置权限**：
+   b) **运行诊断工具自动修复**：
+
+   ```bash
+   mcp-chrome-bridge doctor --fix
+   ```
+
+   c) **手动设置权限**：
 
    ```bash
    # 查找安装路径
-   npm list -g chrome-mcp-bridge
+   npm list -g mcp-chrome-bridge
    # 或者对于 pnpm
-   pnpm list -g chrome-mcp-bridge
+   pnpm list -g mcp-chrome-bridge
 
    # 设置执行权限（替换为实际路径）
-   chmod +x /path/to/node_modules/chrome-mcp-bridge/run_host.sh
-   chmod +x /path/to/node_modules/chrome-mcp-bridge/index.js
-   chmod +x /path/to/node_modules/chrome-mcp-bridge/cli.js
+   chmod +x /path/to/node_modules/mcp-chrome-bridge/run_host.sh
+   chmod +x /path/to/node_modules/mcp-chrome-bridge/index.js
+   chmod +x /path/to/node_modules/mcp-chrome-bridge/cli.js
    ```
 
    **Windows 平台**：
 
    **问题描述**：
-
    - Windows 上 `.bat` 文件通常不需要执行权限，但可能遇到其他问题
    - 文件可能被标记为只读
    - 可能遇到 "Access denied" 或文件无法执行的错误
@@ -274,42 +278,46 @@ manifest.json
    a) **使用内置修复命令（推荐）**：
 
    ```cmd
-   chrome-mcp-bridge fix-permissions
+   mcp-chrome-bridge fix-permissions
    ```
 
-   b) **手动检查文件属性**：
+   b) **运行诊断工具自动修复**：
+
+   ```cmd
+   mcp-chrome-bridge doctor --fix
+   ```
+
+   c) **手动检查文件属性**：
 
    ```cmd
    # 查找安装路径
-   npm list -g chrome-mcp-bridge
+   npm list -g mcp-chrome-bridge
 
    # 检查文件属性（在文件资源管理器中右键 -> 属性）
    # 确保 run_host.bat 不是只读文件
    ```
 
-   c) **重新安装并强制权限**：
+   d) **重新安装并强制权限**：
 
    ```bash
    # 卸载
-   npm uninstall -g chrome-mcp-bridge
-   # 或 pnpm uninstall -g chrome-mcp-bridge
+   npm uninstall -g mcp-chrome-bridge
+   # 或 pnpm uninstall -g mcp-chrome-bridge
 
    # 重新安装
-   npm install -g chrome-mcp-bridge
-   # 或 pnpm install -g chrome-mcp-bridge
+   npm install -g mcp-chrome-bridge
+   # 或 pnpm install -g mcp-chrome-bridge
 
    # 如果仍有问题，运行权限修复
-   chrome-mcp-bridge fix-permissions
+   mcp-chrome-bridge fix-permissions
    ```
 
 4. 在 Windows 上，确保注册表访问没有被限制
-
    - 检查是否可以访问 `HKCU\Software\Google\Chrome\NativeMessagingHosts\`
    - 对于系统级别，检查 `HKLM\Software\Google\Chrome\NativeMessagingHosts\`
 
 5. 尝试使用系统级别安装
-
-   - 使用 `chrome-mcp-bridge register --system` 命令
+   - 使用 `mcp-chrome-bridge register --system` 命令
    - 或直接使用管理员权限运行
 
 6. 检查控制台输出的错误信息

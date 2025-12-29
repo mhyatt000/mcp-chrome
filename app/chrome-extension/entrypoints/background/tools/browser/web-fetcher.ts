@@ -8,6 +8,9 @@ interface WebFetcherToolParams {
   textContent?: boolean; // get the visible text content of the current page. default: true
   url?: string; // optional URL to fetch content from (if not provided, uses active tab)
   selector?: string; // optional CSS selector to get content from a specific element
+  tabId?: number; // target existing tab id
+  background?: boolean; // do not activate/focus
+  windowId?: number; // target window id to pick active tab or create tab
 }
 
 class WebFetcherTool extends BaseBrowserToolExecutor {
@@ -22,6 +25,9 @@ class WebFetcherTool extends BaseBrowserToolExecutor {
     const textContent = htmlContent ? false : args.textContent !== false; // Default is true, unless htmlContent is true or textContent is explicitly set to false
     const url = args.url;
     const selector = args.selector;
+    const explicitTabId = args.tabId;
+    const background = args.background === true;
+    const windowId = args.windowId;
 
     console.log(`Starting web fetcher with options:`, {
       htmlContent,
@@ -34,7 +40,9 @@ class WebFetcherTool extends BaseBrowserToolExecutor {
       // Get tab to fetch content from
       let tab;
 
-      if (url) {
+      if (typeof explicitTabId === 'number') {
+        tab = await chrome.tabs.get(explicitTabId);
+      } else if (url) {
         // If URL is provided, check if it's already open
         console.log(`Checking if URL is already open: ${url}`);
         const allTabs = await chrome.tabs.query({});
@@ -54,15 +62,18 @@ class WebFetcherTool extends BaseBrowserToolExecutor {
         } else {
           // Create new tab with the URL
           console.log(`No existing tab found with URL: ${url}, creating new tab`);
-          tab = await chrome.tabs.create({ url, active: true });
+          tab = await chrome.tabs.create({ url, active: background ? false : true });
 
           // Wait for page to load
           console.log('Waiting for page to load...');
           await new Promise((resolve) => setTimeout(resolve, 3000));
         }
       } else {
-        // Use active tab
-        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        // Use active tab (prefer specified window)
+        const tabs =
+          typeof windowId === 'number'
+            ? await chrome.tabs.query({ active: true, windowId })
+            : await chrome.tabs.query({ active: true, currentWindow: true });
         if (!tabs[0]) {
           return createErrorResponse('No active tab found');
         }
@@ -73,8 +84,11 @@ class WebFetcherTool extends BaseBrowserToolExecutor {
         return createErrorResponse('Tab has no ID');
       }
 
-      // Make sure tab is active
-      await chrome.tabs.update(tab.id, { active: true });
+      // Optionally bring tab/window to foreground
+      if (!background) {
+        await chrome.tabs.update(tab.id, { active: true });
+        await chrome.windows.update(tab.windowId, { focused: true });
+      }
 
       // Prepare result object
       const result: any = {

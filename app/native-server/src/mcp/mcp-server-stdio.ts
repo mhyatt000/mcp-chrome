@@ -95,8 +95,10 @@ const handleToolCall = async (name: string, args: any): Promise<CallToolResult> 
     if (!client) {
       throw new Error('Failed to connect to MCP server');
     }
+    // Use a sane default of 2 minutes; the previous value mistakenly used 2*6*1000 (12s)
+    const DEFAULT_CALL_TIMEOUT_MS = 2 * 60 * 1000;
     const result = await client.callTool({ name, arguments: args }, undefined, {
-      timeout: 2 * 6 * 1000, // Default timeout of 2 minute
+      timeout: DEFAULT_CALL_TIMEOUT_MS,
     });
     return result as CallToolResult;
   } catch (error: any) {

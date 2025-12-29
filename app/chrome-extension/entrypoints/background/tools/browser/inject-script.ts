@@ -5,6 +5,9 @@ import { ExecutionWorld } from '@/common/constants';
 
 interface InjectScriptParam {
   url?: string;
+  tabId?: number;
+  windowId?: number;
+  background?: boolean;
 }
 interface ScriptConfig {
   type: ExecutionWorld;
@@ -22,14 +25,16 @@ class InjectScriptTool extends BaseBrowserToolExecutor {
   name = TOOL_NAMES.BROWSER.INJECT_SCRIPT;
   async execute(args: InjectScriptParam & ScriptConfig): Promise<ToolResult> {
     try {
-      const { url, type, jsScript } = args;
-      let tab;
+      const { url, type, jsScript, tabId, windowId, background } = args;
+      let tab: chrome.tabs.Tab | undefined;
 
       if (!type || !jsScript) {
         return createErrorResponse('Param [type] and [jsScript] is required');
       }
 
-      if (url) {
+      if (typeof tabId === 'number') {
+        tab = await chrome.tabs.get(tabId);
+      } else if (url) {
         // If URL is provided, check if it's already open
         console.log(`Checking if URL is already open: ${url}`);
         const allTabs = await chrome.tabs.query({});
@@ -49,15 +54,22 @@ class InjectScriptTool extends BaseBrowserToolExecutor {
         } else {
           // Create new tab with the URL
           console.log(`No existing tab found with URL: ${url}, creating new tab`);
-          tab = await chrome.tabs.create({ url, active: true });
+          tab = await chrome.tabs.create({
+            url,
+            active: background === true ? false : true,
+            windowId,
+          });
 
           // Wait for page to load
           console.log('Waiting for page to load...');
           await new Promise((resolve) => setTimeout(resolve, 3000));
         }
       } else {
-        // Use active tab
-        const tabs = await chrome.tabs.query({ active: true });
+        // Use active tab (prefer the specified window)
+        const tabs =
+          typeof windowId === 'number'
+            ? await chrome.tabs.query({ active: true, windowId })
+            : await chrome.tabs.query({ active: true, currentWindow: true });
         if (!tabs[0]) {
           return createErrorResponse('No active tab found');
         }
@@ -68,8 +80,11 @@ class InjectScriptTool extends BaseBrowserToolExecutor {
         return createErrorResponse('Tab has no ID');
       }
 
-      // Make sure tab is active
-      await chrome.tabs.update(tab.id, { active: true });
+      // Optionally bring tab/window to foreground based on background flag
+      if (background !== true) {
+        await chrome.tabs.update(tab.id, { active: true });
+        await chrome.windows.update(tab.windowId, { focused: true });
+      }
 
       const res = await handleInject(tab.id!, { ...args });
 

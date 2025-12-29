@@ -4,7 +4,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { COMMAND_NAME } from './constant';
-import { colorText, tryRegisterUserLevelHost } from './utils';
+import { colorText, tryRegisterUserLevelHost, writeNodePathFile } from './utils';
 
 // Check if this script is run directly
 const isDirectRun = require.main === module;
@@ -59,18 +59,17 @@ function detectGlobalInstall(): boolean {
 const isGlobalInstall = detectGlobalInstall();
 
 /**
- * Write Node.js path for run_host scripts to avoid fragile relative paths
+ * Detect if running with elevated privileges (sudo/admin)
+ * This can cause issues because user-level registration will go to root's home directory
  */
-async function writeNodePath(): Promise<void> {
-  try {
-    const nodePath = process.execPath;
-    const nodePathFile = path.join(__dirname, '..', 'node_path.txt');
-
-    console.log(colorText(`Writing Node.js path: ${nodePath}`, 'blue'));
-    fs.writeFileSync(nodePathFile, nodePath, 'utf8');
-    console.log(colorText('✓ Node.js path written for run_host scripts', 'green'));
-  } catch (error: any) {
-    console.warn(colorText(`⚠️ Failed to write Node.js path: ${error.message}`, 'yellow'));
+function isRunningElevated(): boolean {
+  if (process.platform === 'win32') {
+    // On Windows, check common admin indicators
+    // Note: Full admin check requires is-admin package which is ESM
+    return false; // Skip for now, Windows npm usually doesn't run as admin by default
+  } else {
+    // On Unix, check if running as root (UID 0)
+    return process.getuid?.() === 0;
   }
 }
 
@@ -162,6 +161,30 @@ async function tryRegisterNativeHost(): Promise<void> {
     // Always ensure execution permissions, regardless of installation type
     await ensureExecutionPermissions();
 
+    // Check if running with elevated privileges
+    if (isRunningElevated()) {
+      console.log(
+        colorText('\n⚠️  WARNING: Running with elevated privileges (sudo/root)', 'yellow'),
+      );
+      console.log(
+        colorText("   User-level registration will be written to root's home directory,", 'yellow'),
+      );
+      console.log(
+        colorText('   which may not work correctly for your normal user account.', 'yellow'),
+      );
+      console.log(
+        colorText(
+          '\n   Please run the following command as your normal user after installation:',
+          'blue',
+        ),
+      );
+      console.log(`   ${COMMAND_NAME} register`);
+      console.log(colorText('\n   Or if you need system-level installation, use:', 'blue'));
+      console.log(`   sudo ${COMMAND_NAME} register --system`);
+      // Skip automatic registration when running as root
+      return;
+    }
+
     if (isGlobalInstall) {
       // First try user-level installation (no elevated permissions required)
       const userLevelSuccess = await tryRegisterUserLevelHost();
@@ -215,7 +238,7 @@ function printManualInstructions(): void {
     colorText('\n2. If user-level installation fails, try system-level installation:', 'yellow'),
   );
 
-  console.log(colorText('   Use --system parameter (auto-elevate permissions):', 'yellow'));
+  console.log(colorText('   Use --system parameter (requires admin privileges):', 'yellow'));
   if (isGlobalInstall) {
     console.log(`  ${COMMAND_NAME} register --system`);
   } else {
@@ -271,7 +294,7 @@ async function main(): Promise<void> {
   await ensureExecutionPermissions();
 
   // Write Node.js path for run_host scripts to use
-  await writeNodePath();
+  writeNodePathFile(path.join(__dirname, '..'));
 
   // If global installation, try automatic registration
   if (isGlobalInstall) {
@@ -291,5 +314,7 @@ if (isDirectRun) {
         'red',
       ),
     );
+    // Set non-zero exit code to indicate installation failure
+    process.exitCode = 1;
   });
 }

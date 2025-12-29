@@ -10,10 +10,20 @@ interface Coordinates {
 }
 
 interface ClickToolParams {
-  selector?: string; // CSS selector for the element to click
+  selector?: string; // CSS selector or XPath for the element to click
+  selectorType?: 'css' | 'xpath'; // Type of selector (default: 'css')
+  ref?: string; // Element ref from accessibility tree (window.__claudeElementMap)
   coordinates?: Coordinates; // Coordinates to click at (x, y relative to viewport)
   waitForNavigation?: boolean; // Whether to wait for navigation to complete after click
   timeout?: number; // Timeout in milliseconds for waiting for the element or navigation
+  frameId?: number; // Target frame for ref/selector resolution
+  double?: boolean; // Perform double click when true
+  button?: 'left' | 'right' | 'middle';
+  bubbles?: boolean;
+  cancelable?: boolean;
+  modifiers?: { altKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; shiftKey?: boolean };
+  tabId?: number; // target existing tab id
+  windowId?: number; // when no tabId, pick active tab from this window
 }
 
 /**
@@ -28,41 +38,96 @@ class ClickTool extends BaseBrowserToolExecutor {
   async execute(args: ClickToolParams): Promise<ToolResult> {
     const {
       selector,
+      selectorType = 'css',
       coordinates,
       waitForNavigation = false,
       timeout = TIMEOUTS.DEFAULT_WAIT * 5,
+      frameId,
+      button,
+      bubbles,
+      cancelable,
+      modifiers,
     } = args;
 
     console.log(`Starting click operation with options:`, args);
 
-    if (!selector && !coordinates) {
+    if (!selector && !coordinates && !args.ref) {
       return createErrorResponse(
-        ERROR_MESSAGES.INVALID_PARAMETERS + ': Either selector or coordinates must be provided',
+        ERROR_MESSAGES.INVALID_PARAMETERS + ': Provide ref or selector or coordinates',
       );
     }
 
     try {
-      // Get current tab
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tabs[0]) {
-        return createErrorResponse(ERROR_MESSAGES.TAB_NOT_FOUND);
-      }
-
-      const tab = tabs[0];
+      // Resolve tab
+      const explicit = await this.tryGetTab(args.tabId);
+      const tab = explicit || (await this.getActiveTabOrThrowInWindow(args.windowId));
       if (!tab.id) {
         return createErrorResponse(ERROR_MESSAGES.TAB_NOT_FOUND + ': Active tab has no ID');
+      }
+
+      let finalRef = args.ref;
+      let finalSelector = selector;
+
+      // If selector is XPath, convert to ref first
+      if (selector && selectorType === 'xpath') {
+        await this.injectContentScript(tab.id, ['inject-scripts/accessibility-tree-helper.js']);
+        try {
+          const resolved = await this.sendMessageToTab(
+            tab.id,
+            {
+              action: TOOL_MESSAGE_TYPES.ENSURE_REF_FOR_SELECTOR,
+              selector,
+              isXPath: true,
+            },
+            frameId,
+          );
+          if (resolved && resolved.success && resolved.ref) {
+            finalRef = resolved.ref;
+            finalSelector = undefined; // Use ref instead of selector
+          } else {
+            return createErrorResponse(
+              `Failed to resolve XPath selector: ${resolved?.error || 'unknown error'}`,
+            );
+          }
+        } catch (error) {
+          return createErrorResponse(
+            `Error resolving XPath: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
       }
 
       await this.injectContentScript(tab.id, ['inject-scripts/click-helper.js']);
 
       // Send click message to content script
-      const result = await this.sendMessageToTab(tab.id, {
-        action: TOOL_MESSAGE_TYPES.CLICK_ELEMENT,
-        selector,
-        coordinates,
-        waitForNavigation,
-        timeout,
-      });
+      const result = await this.sendMessageToTab(
+        tab.id,
+        {
+          action: TOOL_MESSAGE_TYPES.CLICK_ELEMENT,
+          selector: finalSelector,
+          coordinates,
+          ref: finalRef,
+          waitForNavigation,
+          timeout,
+          double: args.double === true,
+          button,
+          bubbles,
+          cancelable,
+          modifiers,
+        },
+        frameId,
+      );
+
+      // Determine actual click method used
+      let clickMethod: string;
+      if (coordinates) {
+        clickMethod = 'coordinates';
+      } else if (finalRef) {
+        clickMethod = 'ref';
+      } else if (finalSelector) {
+        clickMethod = 'selector';
+      } else {
+        clickMethod = 'unknown';
+      }
 
       return {
         content: [
@@ -73,7 +138,7 @@ class ClickTool extends BaseBrowserToolExecutor {
               message: result.message || 'Click operation successful',
               elementInfo: result.elementInfo,
               navigationOccurred: result.navigationOccurred,
-              clickMethod: coordinates ? 'coordinates' : 'selector',
+              clickMethod,
             }),
           },
         ],
@@ -91,8 +156,14 @@ class ClickTool extends BaseBrowserToolExecutor {
 export const clickTool = new ClickTool();
 
 interface FillToolParams {
-  selector: string;
-  value: string;
+  selector?: string;
+  selectorType?: 'css' | 'xpath'; // Type of selector (default: 'css')
+  ref?: string; // Element ref from accessibility tree
+  // Accept string | number | boolean for broader form input coverage
+  value: string | number | boolean;
+  frameId?: number;
+  tabId?: number; // target existing tab id
+  windowId?: number; // when no tabId, pick active tab from this window
 }
 
 /**
@@ -105,12 +176,12 @@ class FillTool extends BaseBrowserToolExecutor {
    * Execute fill operation
    */
   async execute(args: FillToolParams): Promise<ToolResult> {
-    const { selector, value } = args;
+    const { selector, selectorType = 'css', ref, value, frameId } = args;
 
     console.log(`Starting fill operation with options:`, args);
 
-    if (!selector) {
-      return createErrorResponse(ERROR_MESSAGES.INVALID_PARAMETERS + ': Selector must be provided');
+    if (!selector && !ref) {
+      return createErrorResponse(ERROR_MESSAGES.INVALID_PARAMETERS + ': Provide ref or selector');
     }
 
     if (value === undefined || value === null) {
@@ -118,27 +189,58 @@ class FillTool extends BaseBrowserToolExecutor {
     }
 
     try {
-      // Get current tab
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tabs[0]) {
-        return createErrorResponse(ERROR_MESSAGES.TAB_NOT_FOUND);
-      }
-
-      const tab = tabs[0];
+      const explicit = await this.tryGetTab(args.tabId);
+      const tab = explicit || (await this.getActiveTabOrThrowInWindow(args.windowId));
       if (!tab.id) {
         return createErrorResponse(ERROR_MESSAGES.TAB_NOT_FOUND + ': Active tab has no ID');
+      }
+
+      let finalRef = ref;
+      let finalSelector = selector;
+
+      // If selector is XPath, convert to ref first
+      if (selector && selectorType === 'xpath') {
+        await this.injectContentScript(tab.id, ['inject-scripts/accessibility-tree-helper.js']);
+        try {
+          const resolved = await this.sendMessageToTab(
+            tab.id,
+            {
+              action: TOOL_MESSAGE_TYPES.ENSURE_REF_FOR_SELECTOR,
+              selector,
+              isXPath: true,
+            },
+            frameId,
+          );
+          if (resolved && resolved.success && resolved.ref) {
+            finalRef = resolved.ref;
+            finalSelector = undefined; // Use ref instead of selector
+          } else {
+            return createErrorResponse(
+              `Failed to resolve XPath selector: ${resolved?.error || 'unknown error'}`,
+            );
+          }
+        } catch (error) {
+          return createErrorResponse(
+            `Error resolving XPath: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
       }
 
       await this.injectContentScript(tab.id, ['inject-scripts/fill-helper.js']);
 
       // Send fill message to content script
-      const result = await this.sendMessageToTab(tab.id, {
-        action: TOOL_MESSAGE_TYPES.FILL_ELEMENT,
-        selector,
-        value,
-      });
+      const result = await this.sendMessageToTab(
+        tab.id,
+        {
+          action: TOOL_MESSAGE_TYPES.FILL_ELEMENT,
+          selector: finalSelector,
+          ref: finalRef,
+          value,
+        },
+        frameId,
+      );
 
-      if (result.error) {
+      if (result && result.error) {
         return createErrorResponse(result.error);
       }
 

@@ -15,8 +15,8 @@
 
 ### 前置条件
 
-- Node.js 14+
-- npm 6+
+- Node.js 20+
+- npm 8+ 或 pnpm 8+
 
 ### 安装
 

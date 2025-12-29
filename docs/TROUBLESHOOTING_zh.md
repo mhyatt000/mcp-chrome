@@ -1,10 +1,49 @@
 ## 🚀 安装和连接问题
 
+### 快速诊断
+
+运行诊断工具来识别常见问题：
+
+```bash
+mcp-chrome-bridge doctor
+```
+
+自动修复常见问题：
+
+```bash
+mcp-chrome-bridge doctor --fix
+```
+
+### 导出诊断报告
+
+如果需要提交 Issue，可以导出诊断报告：
+
+```bash
+# 打印 Markdown 报告到终端（复制粘贴到 GitHub Issue）
+mcp-chrome-bridge report
+
+# 写入到文件
+mcp-chrome-bridge report --output mcp-report.md
+
+# 直接复制到剪贴板
+mcp-chrome-bridge report --copy
+```
+
+默认情况下，用户名、路径和令牌会被脱敏。如果你需要提供完整路径，可以使用 `--no-redact`。
+
 ### 常见问题
 
 #### 连接成功，但是服务启动失败
 
-启动失败基本上都是**权限问题**或者用包管理工具安装的**node**导致的启动脚本找不到对应的node，核心排查流程
+启动失败基本上都是**权限问题**或者用包管理工具安装的**node**导致的启动脚本找不到对应的node。
+
+**推荐先运行诊断工具：**
+
+```bash
+mcp-chrome-bridge doctor
+```
+
+核心排查流程
 
 1. npm包全局安装后，确认清单文件com.chromemcp.nativehost.json的位置，里面有一个**path**字段，指向的是一个启动脚本:
 
@@ -36,20 +75,41 @@ mac路径： /Users/xxx/Library/Application\ Support/Google/Chrome/NativeMessagi
 
 > 如果发现没有此清单文件，可以尝试命令行执行：`mcp-chrome-bridge register`
 
-2. Chrome浏览器会找到上面的清单文件指向的脚本路径来执行该脚本，同时会在/Users/xxx/Library/pnpm/global/5/.pnpm/mcp-chrome-bridge@1.0.23/node_modules/mcp-chrome-bridge/dist/（windows的自行查看清单文件对应的目录）下生成logs文件夹，里面会记录日志
+2. **检查日志**
 
-具体要看你的安装路径（如果不清楚，可以打开上面提到的清单文件，里面的path就是安装目录），比如安装路径如下：看下日志的内容
-C:\Users\admin\AppData\Local\nvm\v20.19.2\node_modules\mcp-chrome-bridge\dist\logs
+日志现在存储在用户可写目录：
+
+- **macOS**: `~/Library/Logs/mcp-chrome-bridge/`
+- **Windows**: `%LOCALAPPDATA%\mcp-chrome-bridge\logs\`（例如 `C:\Users\xxx\AppData\Local\mcp-chrome-bridge\logs\`）
+- **Linux**: `~/.local/state/mcp-chrome-bridge/logs/`
+
 <img width="804" alt="截屏2025-06-11 15 09 41" src="https://github.com/user-attachments/assets/ce7b7c94-7c84-409a-8210-c9317823aae1" />
 
 3. 一般失败的原因就是两种
 
-3.1. run_host.sh(windows是run_host.bat)没有执行权限：此时你可以自行赋予权限，参考：https://github.com/hangwin/mcp-chrome/issues/22#issuecomment-2990636930。 脚本路径在上述的清单文件可以查看
+3.1. run_host.sh(windows是run_host.bat)没有执行权限：运行以下命令修复：
 
-3.2. 脚本找不到node，因为你可能电脑上装了不同版本的node，脚本确认不了你把npm包装在哪个node底下了，不同的人可能用了不同的node版本管理工具，导致找不到，
-参考：https://github.com/hangwin/mcp-chrome/issues/29#issuecomment-3003513940 （这个点目前正在优化中）
+```bash
+mcp-chrome-bridge fix-permissions
+```
+
+3.2. 脚本找不到node：如果你使用 Node 版本管理工具（nvm、volta、asdf、fnm），可以设置 `CHROME_MCP_NODE_PATH` 环境变量：
+
+```bash
+export CHROME_MCP_NODE_PATH=/path/to/your/node
+```
+
+或者运行 `mcp-chrome-bridge doctor --fix` 来写入当前 Node 路径。
 
 3.3 如果排除了以上两种原因都不行，则查看日志目录的日志，然后提issue
+
+### 日志位置
+
+包装器日志现在存储在用户可写的位置：
+
+- **macOS**: `~/Library/Logs/mcp-chrome-bridge/`
+- **Windows**: `%LOCALAPPDATA%\mcp-chrome-bridge\logs\`
+- **Linux**: `~/.local/state/mcp-chrome-bridge/logs/`
 
 #### 工具执行超时
 

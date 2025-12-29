@@ -2879,6 +2879,32 @@ if (window.__WEB_FETCHER_HELPER_INITIALIZED__) {
   }
 
   /**
+   * Check if an element is visible in the DOM.
+   * This mirrors the visibility check used by other helpers.
+   * @param {Element} el
+   * @returns {boolean}
+   */
+  function isElementVisible(el) {
+    if (!el || !el.isConnected) return false;
+    try {
+      const style = window.getComputedStyle(el);
+      if (
+        style.display === 'none' ||
+        style.visibility === 'hidden' ||
+        parseFloat(style.opacity) === 0
+      ) {
+        return false;
+      }
+    } catch (_) {
+      // If getComputedStyle fails (e.g., detached node), treat as not visible
+      return false;
+    }
+
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 || rect.height > 0 || el.tagName === 'A';
+  }
+
+  /**
    * Check if iframe is same origin
    * @param {HTMLIFrameElement} iframe - The iframe to check
    * @returns {boolean} - Whether the iframe is same origin

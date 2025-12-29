@@ -17,7 +17,7 @@
 
 ### 环境要求
 
-- **Node.js 18+** 和 **pnpm**（最新版本）
+- **Node.js 20+** 和 **pnpm**（最新版本）
 - **Chrome/Chromium** 浏览器用于测试
 - **Git** 版本控制
 - **Rust**（用于 WASM 开发，可选）
@@ -121,13 +121,11 @@ git checkout -b feature/your-feature-name
 ```
 
 2. **进行更改**
-
    - 遵循代码风格指南
    - 为新功能添加测试
    - 如需要，更新文档
 
 3. **测试您的更改**
-
    - 确保所有现有测试通过
    - 手动测试 Chrome 扩展
    - 验证 MCP 协议兼容性

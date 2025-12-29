@@ -34,16 +34,55 @@
       'input:not([type="button"]):not([type="submit"]):not([type="checkbox"]):not([type="radio"])',
     checkbox: 'input[type="checkbox"], [role="checkbox"]',
     radio: 'input[type="radio"], [role="radio"]',
-    textarea: 'textarea',
-    select: 'select',
+    textarea: 'textarea, [role="textbox"], [role="searchbox"]',
+    select: 'select, [role="combobox"]',
     tab: '[role="tab"]',
     // Generic interactive elements: combines tabindex, common roles, and explicit handlers.
     // This is the key to finding custom-built interactive components.
-    interactive: `[onclick], [tabindex]:not([tabindex^="-"]), [role="menuitem"], [role="slider"], [role="option"], [role="treeitem"]`,
+    interactive: `[onclick], [tabindex]:not([tabindex^="-"]), [role="menuitem"], [role="slider"], [role="option"], [role="treeitem"], [role="switch"]`,
   };
 
   // A combined selector for ANY interactive element, used in the fallback logic.
   const ANY_INTERACTIVE_SELECTOR = Object.values(ELEMENT_CONFIG).join(', ');
+
+  // Query helpers that pierce open shadow roots. These are used only in fallback paths or
+  // when a selector is explicitly provided, to keep costs bounded.
+  function* walkAllNodesDeep(root) {
+    const stack = [root];
+    const MAX = 12000; // safety bound
+    let count = 0;
+    while (stack.length) {
+      const node = stack.pop();
+      if (!node) continue;
+      if (++count > MAX) break;
+      yield node;
+      const anyNode = /** @type {any} */ (node);
+      try {
+        const children = node.children ? Array.from(node.children) : [];
+        for (let i = children.length - 1; i >= 0; i--) stack.push(children[i]);
+        const sr = anyNode && anyNode.shadowRoot ? anyNode.shadowRoot : null;
+        if (sr && sr.children) {
+          const srChildren = Array.from(sr.children);
+          for (let i = srChildren.length - 1; i >= 0; i--) stack.push(srChildren[i]);
+        }
+      } catch (_) {
+        /* ignore */
+      }
+    }
+  }
+
+  function querySelectorAllDeep(selector, root = document) {
+    const results = [];
+    for (const node of walkAllNodesDeep(root)) {
+      if (!(node instanceof Element)) continue;
+      try {
+        if (node.matches && node.matches(selector)) results.push(node);
+      } catch (_) {
+        /* ignore invalid selectors for given node */
+      }
+    }
+    return results;
+  }
 
   // --- Core Helper Functions ---
 
@@ -221,7 +260,7 @@
       .join(', ');
     if (!selectorsToFind) return [];
 
-    const targetElements = Array.from(document.querySelectorAll(selectorsToFind));
+    const targetElements = querySelectorAllDeep(selectorsToFind);
     const uniqueElements = new Set(targetElements);
     const results = [];
 
@@ -325,7 +364,7 @@
         let elements;
         if (request.selector) {
           // If a selector is provided, bypass the text-based logic and use a direct query.
-          const foundEls = Array.from(document.querySelectorAll(request.selector));
+          const foundEls = querySelectorAllDeep(request.selector);
           elements = foundEls.map((el) =>
             createElementInfo(
               el,

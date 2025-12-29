@@ -5,6 +5,11 @@ import {
   OFFSCREEN_MESSAGE_TYPES,
   BACKGROUND_MESSAGE_TYPES,
 } from '@/common/message-types';
+import { handleGifMessage } from './gif-encoder';
+import { initKeepalive } from './rr-keepalive';
+
+// 初始化 RR V3 Keepalive
+initKeepalive();
 
 // Global semantic similarity engine instance
 let similarityEngine: SemanticSimilarityEngine | null = null;
@@ -60,6 +65,11 @@ chrome.runtime.onMessage.addListener(
   ) => {
     if (message.target !== MessageTarget.Offscreen) {
       return;
+    }
+
+    // Handle GIF encoding messages first
+    if (handleGifMessage(message, sendResponse)) {
+      return true;
     }
 
     try {

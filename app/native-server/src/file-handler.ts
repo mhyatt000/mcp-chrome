@@ -22,7 +22,7 @@ export class FileHandler {
    * Handle file preparation request from the extension
    */
   async handleFileRequest(request: any): Promise<any> {
-    const { action, fileUrl, base64Data, fileName, filePath } = request;
+    const { action, fileUrl, base64Data, fileName, filePath, traceFilePath, insightName } = request;
 
     try {
       switch (action) {
@@ -36,8 +36,28 @@ export class FileHandler {
           }
           break;
 
+        case 'readBase64File': {
+          if (!filePath) return { success: false, error: 'filePath is required' };
+          return await this.readBase64File(filePath);
+        }
+
         case 'cleanupFile':
           return await this.cleanupFile(filePath);
+
+        case 'analyzeTrace': {
+          const targetPath = traceFilePath || filePath;
+          if (!targetPath) {
+            return { success: false, error: 'traceFilePath is required' };
+          }
+          try {
+            // With tsconfig moduleResolution=NodeNext, relative ESM imports need explicit .js extension
+            const { analyzeTraceFile } = await import('./trace-analyzer.js');
+            const res = await analyzeTraceFile(targetPath, insightName);
+            return { success: true, ...res };
+          } catch (e: any) {
+            return { success: false, error: e?.message || String(e) };
+          }
+        }
 
         default:
           return {
@@ -91,7 +111,7 @@ export class FileHandler {
     try {
       // Remove data URL prefix if present
       const base64Content = base64Data.replace(/^data:.*?;base64,/, '');
-      
+
       // Convert base64 to buffer
       const buffer = Buffer.from(base64Content, 'base64');
 
@@ -142,6 +162,35 @@ export class FileHandler {
       };
     } catch (error) {
       throw new Error(`Failed to verify file: ${error}`);
+    }
+  }
+
+  /**
+   * Read file content and return as base64 string
+   */
+  private async readBase64File(filePath: string): Promise<any> {
+    try {
+      if (!fs.existsSync(filePath)) {
+        throw new Error(`File does not exist: ${filePath}`);
+      }
+      const stats = fs.statSync(filePath);
+      if (!stats.isFile()) {
+        throw new Error(`Path is not a file: ${filePath}`);
+      }
+      const buf = fs.readFileSync(filePath);
+      const base64 = buf.toString('base64');
+      return {
+        success: true,
+        filePath,
+        fileName: path.basename(filePath),
+        size: stats.size,
+        base64Data: base64,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Failed to read file: ${error instanceof Error ? error.message : String(error)}`,
+      };
     }
   }
 
@@ -213,7 +262,8 @@ export class FileHandler {
         const stats = fs.statSync(filePath);
         if (now - stats.mtimeMs > oneHour) {
           fs.unlinkSync(filePath);
-          console.log(`Cleaned up old temp file: ${file}`);
+          // Use stderr to avoid polluting stdout (Native Messaging protocol)
+          console.error(`Cleaned up old temp file: ${file}`);
         }
       }
     } catch (error) {

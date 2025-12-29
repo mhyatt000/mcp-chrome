@@ -1,3 +1,13 @@
+/**
+ * HTTP Server - Core server implementation.
+ *
+ * Responsibilities:
+ * - Fastify instance management
+ * - Plugin registration (CORS, etc.)
+ * - Route delegation to specialized modules
+ * - MCP transport handling
+ * - Server lifecycle management
+ */
 import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import cors from '@fastify/cors';
 import {
@@ -13,26 +23,47 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { randomUUID } from 'node:crypto';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { getMcpServer } from '../mcp/mcp-server';
+import { AgentStreamManager } from '../agent/stream-manager';
+import { AgentChatService } from '../agent/chat-service';
+import { CodexEngine } from '../agent/engines/codex';
+import { ClaudeEngine } from '../agent/engines/claude';
+import { closeDb } from '../agent/db';
+import { registerAgentRoutes } from './routes';
 
-// Define request body type (if data needs to be retrieved from HTTP requests)
+// ============================================================
+// Types
+// ============================================================
+
 interface ExtensionRequestPayload {
-  data?: any; // Data you want to pass to the extension
+  data?: unknown;
 }
+
+// ============================================================
+// Server Class
+// ============================================================
 
 export class Server {
   private fastify: FastifyInstance;
-  public isRunning = false; // Changed to public or provide a getter
+  public isRunning = false;
   private nativeHost: NativeMessagingHost | null = null;
   private transportsMap: Map<string, StreamableHTTPServerTransport | SSEServerTransport> =
     new Map();
+  private agentStreamManager: AgentStreamManager;
+  private agentChatService: AgentChatService;
 
   constructor() {
     this.fastify = Fastify({ logger: SERVER_CONFIG.LOGGER_ENABLED });
+    this.agentStreamManager = new AgentStreamManager();
+    this.agentChatService = new AgentChatService({
+      engines: [new CodexEngine(), new ClaudeEngine()],
+      streamManager: this.agentStreamManager,
+    });
     this.setupPlugins();
     this.setupRoutes();
   }
+
   /**
-   * Associate NativeMessagingHost instance
+   * Associate NativeMessagingHost instance.
    */
   public setNativeHost(nativeHost: NativeMessagingHost): void {
     this.nativeHost = nativeHost;
@@ -40,16 +71,60 @@ export class Server {
 
   private async setupPlugins(): Promise<void> {
     await this.fastify.register(cors, {
-      origin: SERVER_CONFIG.CORS_ORIGIN,
+      origin: (origin, cb) => {
+        // Allow requests with no origin (e.g., curl, server-to-server)
+        if (!origin) {
+          return cb(null, true);
+        }
+        // Check if origin matches any pattern in whitelist
+        const allowed = SERVER_CONFIG.CORS_ORIGIN.some((pattern) =>
+          pattern instanceof RegExp ? pattern.test(origin) : origin.startsWith(pattern),
+        );
+        cb(null, allowed);
+      },
+      methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+      credentials: true,
     });
   }
 
   private setupRoutes(): void {
-    // for ping
+    // Health check
+    this.setupHealthRoutes();
+
+    // Extension communication
+    this.setupExtensionRoutes();
+
+    // Agent routes (delegated to separate module)
+    registerAgentRoutes(this.fastify, {
+      streamManager: this.agentStreamManager,
+      chatService: this.agentChatService,
+    });
+
+    // MCP routes
+    this.setupMcpRoutes();
+  }
+
+  // ============================================================
+  // Health Routes
+  // ============================================================
+
+  private setupHealthRoutes(): void {
+    this.fastify.get('/ping', async (_request: FastifyRequest, reply: FastifyReply) => {
+      reply.status(HTTP_STATUS.OK).send({
+        status: 'ok',
+        message: 'pong',
+      });
+    });
+  }
+
+  // ============================================================
+  // Extension Routes
+  // ============================================================
+
+  private setupExtensionRoutes(): void {
     this.fastify.get(
       '/ask-extension',
       async (request: FastifyRequest<{ Body: ExtensionRequestPayload }>, reply: FastifyReply) => {
-
         if (!this.nativeHost) {
           return reply
             .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
@@ -62,39 +137,43 @@ export class Server {
         }
 
         try {
-          // wait from extension message
           const extensionResponse = await this.nativeHost.sendRequestToExtensionAndWait(
             request.query,
             'process_data',
             TIMEOUTS.EXTENSION_REQUEST_TIMEOUT,
           );
           return reply.status(HTTP_STATUS.OK).send({ status: 'success', data: extensionResponse });
-        } catch (error: any) {
-          if (error.message.includes('timed out')) {
+        } catch (error: unknown) {
+          const err = error as Error;
+          if (err.message.includes('timed out')) {
             return reply
               .status(HTTP_STATUS.GATEWAY_TIMEOUT)
               .send({ status: 'error', message: ERROR_MESSAGES.REQUEST_TIMEOUT });
           } else {
             return reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({
               status: 'error',
-              message: `Failed to get response from extension: ${error.message}`,
+              message: `Failed to get response from extension: ${err.message}`,
             });
           }
         }
       },
     );
+  }
 
-    // Compatible with SSE
+  // ============================================================
+  // MCP Routes
+  // ============================================================
+
+  private setupMcpRoutes(): void {
+    // SSE endpoint
     this.fastify.get('/sse', async (_, reply) => {
       try {
-        // Set SSE headers
         reply.raw.writeHead(HTTP_STATUS.OK, {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
           Connection: 'keep-alive',
         });
 
-        // Create SSE transport
         const transport = new SSEServerTransport('/messages', reply.raw);
         this.transportsMap.set(transport.sessionId, transport);
 
@@ -105,7 +184,6 @@ export class Server {
         const server = getMcpServer();
         await server.connect(transport);
 
-        // Keep connection open
         reply.raw.write(':\n\n');
       } catch (error) {
         if (!reply.sent) {
@@ -114,11 +192,11 @@ export class Server {
       }
     });
 
-    // Compatible with SSE
+    // SSE messages endpoint
     this.fastify.post('/messages', async (req, reply) => {
       try {
-        const { sessionId } = req.query as any;
-        const transport = this.transportsMap.get(sessionId) as SSEServerTransport;
+        const { sessionId } = req.query as { sessionId?: string };
+        const transport = this.transportsMap.get(sessionId || '') as SSEServerTransport;
         if (!sessionId || !transport) {
           reply.code(HTTP_STATUS.BAD_REQUEST).send('No transport found for sessionId');
           return;
@@ -132,20 +210,20 @@ export class Server {
       }
     });
 
-    // POST /mcp: Handle client-to-server messages
+    // MCP POST endpoint
     this.fastify.post('/mcp', async (request, reply) => {
       const sessionId = request.headers['mcp-session-id'] as string | undefined;
       let transport: StreamableHTTPServerTransport | undefined = this.transportsMap.get(
         sessionId || '',
       ) as StreamableHTTPServerTransport;
+
       if (transport) {
-        // transport found, do nothing
+        // Transport found, proceed
       } else if (!sessionId && isInitializeRequest(request.body)) {
-        const newSessionId = randomUUID(); // Generate session ID
+        const newSessionId = randomUUID();
         transport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: () => newSessionId, // Use pre-generated ID
+          sessionIdGenerator: () => newSessionId,
           onsessioninitialized: (initializedSessionId) => {
-            // Ensure transport instance exists and session ID matches
             if (transport && initializedSessionId === newSessionId) {
               this.transportsMap.set(initializedSessionId, transport);
             }
@@ -174,11 +252,13 @@ export class Server {
       }
     });
 
+    // MCP GET endpoint (SSE stream)
     this.fastify.get('/mcp', async (request, reply) => {
       const sessionId = request.headers['mcp-session-id'] as string | undefined;
       const transport = sessionId
         ? (this.transportsMap.get(sessionId) as StreamableHTTPServerTransport)
         : undefined;
+
       if (!transport) {
         reply.code(HTTP_STATUS.BAD_REQUEST).send({ error: ERROR_MESSAGES.INVALID_SSE_SESSION });
         return;
@@ -187,14 +267,12 @@ export class Server {
       reply.raw.setHeader('Content-Type', 'text/event-stream');
       reply.raw.setHeader('Cache-Control', 'no-cache');
       reply.raw.setHeader('Connection', 'keep-alive');
-      reply.raw.flushHeaders(); // Ensure headers are sent immediately
+      reply.raw.flushHeaders();
 
       try {
-        // transport.handleRequest will take over the response stream
         await transport.handleRequest(request.raw, reply.raw);
         if (!reply.sent) {
-          // If transport didn't send anything (unlikely for SSE initial handshake)
-          reply.hijack(); // Prevent Fastify from automatically sending response
+          reply.hijack();
         }
       } catch (error) {
         if (!reply.raw.writableEnded) {
@@ -204,10 +282,10 @@ export class Server {
 
       request.socket.on('close', () => {
         request.log.info(`SSE client disconnected for session: ${sessionId}`);
-        // transport's onclose should handle its own cleanup
       });
     });
 
+    // MCP DELETE endpoint
     this.fastify.delete('/mcp', async (request, reply) => {
       const sessionId = request.headers['mcp-session-id'] as string | undefined;
       const transport = sessionId
@@ -221,7 +299,6 @@ export class Server {
 
       try {
         await transport.handleRequest(request.raw, reply.raw);
-        // Assume transport.handleRequest will send response or transport.onclose will cleanup
         if (!reply.sent) {
           reply.code(HTTP_STATUS.NO_CONTENT).send();
         }
@@ -235,11 +312,15 @@ export class Server {
     });
   }
 
+  // ============================================================
+  // Server Lifecycle
+  // ============================================================
+
   public async start(port = NATIVE_SERVER_PORT, nativeHost: NativeMessagingHost): Promise<void> {
     if (!this.nativeHost) {
-      this.nativeHost = nativeHost; // Ensure nativeHost is set
+      this.nativeHost = nativeHost;
     } else if (this.nativeHost !== nativeHost) {
-      this.nativeHost = nativeHost; // Update to the passed instance
+      this.nativeHost = nativeHost;
     }
 
     if (this.isRunning) {
@@ -248,13 +329,15 @@ export class Server {
 
     try {
       await this.fastify.listen({ port, host: SERVER_CONFIG.HOST });
-      this.isRunning = true; // Update running status
-      // No need to return, Promise resolves void by default
+
+      // Set port environment variables after successful listen for Chrome MCP URL resolution
+      process.env.CHROME_MCP_PORT = String(port);
+      process.env.MCP_HTTP_PORT = String(port);
+
+      this.isRunning = true;
     } catch (err) {
-      this.isRunning = false; // Startup failed, reset status
-      // Throw error instead of exiting directly, let caller (possibly NativeHost) handle
-      throw err; // or return Promise.reject(err);
-      // process.exit(1); // Not recommended to exit directly here
+      this.isRunning = false;
+      throw err;
     }
   }
 
@@ -262,14 +345,15 @@ export class Server {
     if (!this.isRunning) {
       return;
     }
-    // this.nativeHost = null; // Not recommended to nullify here, association relationship may still be needed
+
     try {
       await this.fastify.close();
-      this.isRunning = false; // Update running status
-    } catch (err) {
-      // Even if closing fails, mark as not running, but log the error
+      closeDb();
       this.isRunning = false;
-      throw err; // Throw error
+    } catch (err) {
+      this.isRunning = false;
+      closeDb();
+      throw err;
     }
   }
 

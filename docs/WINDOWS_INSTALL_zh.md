@@ -13,7 +13,6 @@ Chrome MCP Server 在windows电脑的详细安装和配置步骤
 确保电脑上已经安装了node，如果没安装请自行先安装
 
 ```bash
-# 确保安装的是最新版本的npm包(当前最新版本是1.0.14)，否则可能有问题
 npm install -g mcp-chrome-bridge
 ```
 
@@ -47,6 +46,20 @@ npm install -g mcp-chrome-bridge
 
 ## 🚀 安装和连接问题
 
+### 快速诊断
+
+如果遇到问题，运行诊断工具：
+
+```bash
+mcp-chrome-bridge doctor
+```
+
+自动修复常见问题：
+
+```bash
+mcp-chrome-bridge doctor --fix
+```
+
 ### 点击扩展的连接按钮后如果没连接成功
 
 1. **检查mcp-chrome-bridge是否安装成功**，确保是全局安装的
@@ -61,8 +74,20 @@ mcp-chrome-bridge -V
 
 路径：C:\Users\xxx\AppData\Roaming\Google\Chrome\NativeMessagingHosts
 
-3. **检查npm包的安装目录下是否有日志**
+3. **检查日志**
 
-具体要看你的安装路径（如果不清楚，可以打开第2步的清单文件，里面的path就是安装目录），比如安装路径如下：看下日志的内容
-C:\Users\admin\AppData\Local\nvm\v20.19.2\node_modules\mcp-chrome-bridge\dist\logs
+日志现在存储在用户目录：`%LOCALAPPDATA%\mcp-chrome-bridge\logs\`
+
+例如：`C:\Users\xxx\AppData\Local\mcp-chrome-bridge\logs\`
+
 <img width="804" alt="截屏2025-06-11 15 09 41" src="https://github.com/user-attachments/assets/ce7b7c94-7c84-409a-8210-c9317823aae1" />
+
+4. **Node.js 路径问题**
+
+如果使用 Node 版本管理器（nvm-windows、volta、fnm），可以设置环境变量：
+
+```cmd
+set CHROME_MCP_NODE_PATH=C:\path\to\your\node.exe
+```
+
+或者运行 `mcp-chrome-bridge doctor --fix` 自动写入当前 Node 路径。

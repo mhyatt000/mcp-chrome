@@ -11,6 +11,32 @@ export const mkdir = promisify(fs.mkdir);
 export const writeFile = promisify(fs.writeFile);
 
 /**
+ * Get the log directory path for wrapper scripts.
+ * Uses platform-appropriate user directories to avoid permission issues.
+ *
+ * - macOS: ~/Library/Logs/mcp-chrome-bridge
+ * - Windows: %LOCALAPPDATA%/mcp-chrome-bridge/logs
+ * - Linux: $XDG_STATE_HOME/mcp-chrome-bridge/logs or ~/.local/state/mcp-chrome-bridge/logs
+ */
+export function getLogDir(): string {
+  const homedir = os.homedir();
+
+  if (os.platform() === 'darwin') {
+    return path.join(homedir, 'Library', 'Logs', 'mcp-chrome-bridge');
+  } else if (os.platform() === 'win32') {
+    return path.join(
+      process.env.LOCALAPPDATA || path.join(homedir, 'AppData', 'Local'),
+      'mcp-chrome-bridge',
+      'logs',
+    );
+  } else {
+    // Linux: XDG_STATE_HOME or ~/.local/state
+    const xdgState = process.env.XDG_STATE_HOME || path.join(homedir, '.local', 'state');
+    return path.join(xdgState, 'mcp-chrome-bridge', 'logs');
+  }
+}
+
+/**
  * 打印彩色文本
  */
 export function colorText(text: string, color: string): string {
@@ -95,6 +121,28 @@ export async function getMainPath(): Promise<string> {
   } catch (error) {
     console.log(colorText('Cannot find global package path, using current directory', 'yellow'));
     throw error;
+  }
+}
+
+/**
+ * Write Node.js executable path to node_path.txt for run_host scripts.
+ * This ensures the native host uses the same Node.js version that was used during installation,
+ * avoiding NODE_MODULE_VERSION mismatch errors with native modules like better-sqlite3.
+ *
+ * @param distDir - The dist directory where node_path.txt should be written
+ * @param nodeExecPath - The Node.js executable path to write (defaults to current process.execPath)
+ */
+export function writeNodePathFile(distDir: string, nodeExecPath = process.execPath): void {
+  try {
+    const nodePathFile = path.join(distDir, 'node_path.txt');
+    fs.mkdirSync(distDir, { recursive: true });
+
+    console.log(colorText(`Writing Node.js path: ${nodeExecPath}`, 'blue'));
+    fs.writeFileSync(nodePathFile, nodeExecPath, 'utf8');
+    console.log(colorText('✓ Node.js path written for run_host scripts', 'green'));
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(colorText(`⚠️ Failed to write Node.js path: ${message}`, 'yellow'));
   }
 }
 
@@ -201,25 +249,51 @@ export async function createManifestContent(): Promise<any> {
 }
 
 /**
- * 验证Windows注册表项是否存在
+ * 验证Windows注册表项是否存在且指向正确路径
  */
 function verifyWindowsRegistryEntry(registryKey: string, expectedPath: string): boolean {
   if (os.platform() !== 'win32') {
     return true; // 非Windows平台跳过验证
   }
 
+  const normalizeForCompare = (filePath: string): string => path.normalize(filePath).toLowerCase();
+
   try {
-    const result = execSync(`reg query "${registryKey}" /ve`, { encoding: 'utf8', stdio: 'pipe' });
-    const lines = result.split('\n');
+    const output = execSync(`reg query "${registryKey}" /ve`, {
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+    const lines = output
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+
     for (const line of lines) {
-      if (line.includes('REG_SZ') && line.includes(expectedPath.replace(/\\/g, '\\\\'))) {
-        return true;
-      }
+      const match = line.match(/REG_SZ\s+(.*)$/i);
+      if (!match?.[1]) continue;
+      const actualPath = match[1].trim();
+      return normalizeForCompare(actualPath) === normalizeForCompare(expectedPath);
     }
-    return false;
-  } catch (error) {
-    return false;
+  } catch {
+    // ignore
   }
+
+  return false;
+}
+
+/**
+ * Write node_path.txt and then register user-level Native Messaging host.
+ * This is the recommended entry point for development and production registration,
+ * as it ensures the Node.js path is captured before registration.
+ *
+ * @param browsers - Optional list of browsers to register for
+ * @returns true if at least one browser was registered successfully
+ */
+export async function registerUserLevelHostWithNodePath(
+  browsers?: BrowserType[],
+): Promise<boolean> {
+  writeNodePathFile(path.join(__dirname, '..'));
+  return tryRegisterUserLevelHost(browsers);
 }
 
 /**
@@ -266,8 +340,8 @@ export async function tryRegisterUserLevelHost(targetBrowsers?: BrowserType[]): 
         // Windows需要额外注册表项
         if (os.platform() === 'win32' && config.registryKey) {
           try {
-            const escapedPath = config.userManifestPath.replace(/\\/g, '\\\\');
-            const regCommand = `reg add "${config.registryKey}" /ve /t REG_SZ /d "${escapedPath}" /f`;
+            // 注意：不需要手动双写反斜杠，reg 命令会正确处理 Windows 路径
+            const regCommand = `reg add "${config.registryKey}" /ve /t REG_SZ /d "${config.userManifestPath}" /f`;
             execSync(regCommand, { stdio: 'pipe' });
 
             if (verifyWindowsRegistryEntry(config.registryKey, config.userManifestPath)) {
@@ -409,9 +483,8 @@ export async function registerWithElevatedPermissions(): Promise<void> {
     // 6. Windows特殊处理 - 设置系统级注册表
     if (os.platform() === 'win32') {
       const registryKey = `HKLM\\Software\\Google\\Chrome\\NativeMessagingHosts\\${HOST_NAME}`;
-      // 确保路径使用正确的转义格式
-      const escapedPath = manifestPath.replace(/\\/g, '\\\\');
-      const regCommand = `reg add "${registryKey}" /ve /t REG_SZ /d "${escapedPath}" /f`;
+      // 注意：不需要手动双写反斜杠，reg 命令会正确处理 Windows 路径
+      const regCommand = `reg add "${registryKey}" /ve /t REG_SZ /d "${manifestPath}" /f`;
 
       console.log(colorText(`Creating system registry entry: ${registryKey}`, 'blue'));
       console.log(colorText(`Manifest path: ${manifestPath}`, 'blue'));

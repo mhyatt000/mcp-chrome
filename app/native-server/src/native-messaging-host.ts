@@ -31,29 +31,55 @@ export class NativeMessagingHost {
   private setupMessageHandling(): void {
     let buffer = Buffer.alloc(0);
     let expectedLength = -1;
+    const MAX_MESSAGES_PER_TICK = 100; // Safety guard to avoid long-running loops per readable tick
+    const MAX_MESSAGE_SIZE_BYTES = 16 * 1024 * 1024; // 16MB upper bound for a single message
+
+    const processAvailable = () => {
+      let processed = 0;
+      while (processed < MAX_MESSAGES_PER_TICK) {
+        // Read length header when needed
+        if (expectedLength === -1) {
+          if (buffer.length < 4) break; // not enough for header
+          expectedLength = buffer.readUInt32LE(0);
+          buffer = buffer.slice(4);
+
+          // Validate length header
+          if (expectedLength <= 0 || expectedLength > MAX_MESSAGE_SIZE_BYTES) {
+            this.sendError(`Invalid message length: ${expectedLength}`);
+            // Reset state to resynchronize stream
+            expectedLength = -1;
+            buffer = Buffer.alloc(0);
+            break;
+          }
+        }
+
+        // Wait for complete body
+        if (buffer.length < expectedLength) break;
+
+        const messageBuffer = buffer.slice(0, expectedLength);
+        buffer = buffer.slice(expectedLength);
+        expectedLength = -1;
+        processed++;
+
+        try {
+          const message = JSON.parse(messageBuffer.toString());
+          this.handleMessage(message);
+        } catch (error: any) {
+          this.sendError(`Failed to parse message: ${error.message}`);
+        }
+      }
+
+      // If we hit the cap but still have at least one complete message pending, schedule to continue soon
+      if (processed === MAX_MESSAGES_PER_TICK) {
+        setImmediate(processAvailable);
+      }
+    };
 
     stdin.on('readable', () => {
       let chunk;
       while ((chunk = stdin.read()) !== null) {
         buffer = Buffer.concat([buffer, chunk]);
-
-        if (expectedLength === -1 && buffer.length >= 4) {
-          expectedLength = buffer.readUInt32LE(0);
-          buffer = buffer.slice(4);
-        }
-
-        if (expectedLength !== -1 && buffer.length >= expectedLength) {
-          const messageBuffer = buffer.slice(0, expectedLength);
-          buffer = buffer.slice(expectedLength);
-
-          try {
-            const message = JSON.parse(messageBuffer.toString());
-            this.handleMessage(message);
-          } catch (error: any) {
-            this.sendError(`Failed to parse message: ${error.message}`);
-          }
-          expectedLength = -1; // reset to get next data
-        }
+        processAvailable();
       }
     });
 
@@ -94,7 +120,7 @@ export class NativeMessagingHost {
     try {
       switch (message.type) {
         case NativeMessageType.START:
-          await this.startServer(message.payload?.port || 3000);
+          await this.startServer(message.payload?.port || 12306);
           break;
         case NativeMessageType.STOP:
           await this.stopServer();
@@ -125,7 +151,7 @@ export class NativeMessagingHost {
   private async handleFileOperation(message: any): Promise<void> {
     try {
       const result = await fileHandler.handleFileRequest(message.payload);
-      
+
       if (message.requestId) {
         // Send response back with the request ID
         this.sendMessage({
@@ -145,7 +171,7 @@ export class NativeMessagingHost {
         success: false,
         error: error.message || 'Unknown error during file operation',
       };
-      
+
       if (message.requestId) {
         this.sendMessage({
           type: 'file_operation_response',
@@ -212,7 +238,6 @@ export class NativeMessagingHost {
         type: NativeMessageType.SERVER_STARTED,
         payload: { port },
       });
-
     } catch (error: any) {
       this.sendError(`Failed to start server: ${error.message}`);
     }
@@ -278,8 +303,6 @@ export class NativeMessagingHost {
       payload: { message: errorMessage },
     });
   }
-
-
 
   /**
    * Clean up resources
