@@ -394,6 +394,43 @@
     },
 
     /**
+     * Get React version from renderer or global.
+     * Prioritizes specific renderer version for multi-renderer scenarios.
+     *
+     * @param {object} hookInfo - Result from detectStatus()
+     * @param {object} [specificRenderer] - Specific renderer to prefer (from resolveFiberWithRenderer)
+     * @returns {string | undefined}
+     */
+    getVersion(hookInfo, specificRenderer) {
+      try {
+        // Priority 1: Specific renderer version (for multi-renderer scenarios)
+        if (specificRenderer) {
+          const version = specificRenderer.version;
+          if (typeof version === 'string' && version.trim()) {
+            return version.trim();
+          }
+        }
+
+        // Priority 2: Any renderer with version
+        const renderers = hookInfo?.renderers || [];
+        for (const item of renderers) {
+          const version = item?.renderer?.version;
+          if (typeof version === 'string' && version.trim()) {
+            return version.trim();
+          }
+        }
+
+        // Priority 3: Global React object (if exposed)
+        if (typeof window !== 'undefined' && window.React?.version) {
+          return String(window.React.version).trim();
+        }
+      } catch {
+        // Best-effort
+      }
+      return undefined;
+    },
+
+    /**
      * Find React fiber from DOM node
      */
     findFiberFromDOM(node) {
@@ -448,6 +485,66 @@
       } catch {
         return 'Anonymous';
       }
+    },
+
+    /**
+     * Extract debug source from React Fiber.
+     * Walks up the fiber tree checking _debugSource and _debugOwner._debugSource.
+     *
+     * @param {object} fiber - React Fiber node
+     * @returns {{ file: string, line?: number, column?: number, componentName?: string } | null}
+     */
+    getDebugSource(fiber) {
+      try {
+        let current = fiber;
+        for (let i = 0; i < 40 && current; i++) {
+          if (!isObject(current)) break;
+
+          // Try direct _debugSource first
+          const src = isObject(current._debugSource) ? current._debugSource : null;
+          if (src) {
+            const file = safeString(src.fileName).trim();
+            if (file) {
+              return this.buildDebugSourceResult(file, src.lineNumber, src.columnNumber, current);
+            }
+          }
+
+          // Fallback to _debugOwner._debugSource
+          const owner = isObject(current._debugOwner) ? current._debugOwner : null;
+          const ownerSrc = owner && isObject(owner._debugSource) ? owner._debugSource : null;
+          if (ownerSrc) {
+            const ownerFile = safeString(ownerSrc.fileName).trim();
+            if (ownerFile) {
+              return this.buildDebugSourceResult(
+                ownerFile,
+                ownerSrc.lineNumber,
+                ownerSrc.columnNumber,
+                owner,
+              );
+            }
+          }
+
+          current = current.return;
+        }
+      } catch {
+        // Best-effort extraction
+      }
+      return null;
+    },
+
+    /**
+     * Build debug source result with validated line/column values.
+     * @private
+     */
+    buildDebugSourceResult(file, lineNumber, columnNumber, fiberForName) {
+      const line = Number(lineNumber);
+      const column = Number(columnNumber);
+      return {
+        file,
+        line: Number.isFinite(line) && line > 0 ? line : undefined,
+        column: Number.isFinite(column) && column > 0 ? column : undefined,
+        componentName: this.getComponentName(fiberForName),
+      };
     },
 
     /**
@@ -569,6 +666,125 @@
       } catch {
         return false;
       }
+    },
+
+    /**
+     * Parse Vue inspector location attribute value.
+     * Format: "src/components/Foo.vue:23:7" or "C:\path\file.vue:10:5" (Windows)
+     *
+     * Uses trailing regex to safely handle Windows paths with drive letters.
+     *
+     * @param {string} value - The data-v-inspector attribute value
+     * @returns {{ file: string, line?: number, column?: number } | null}
+     */
+    parseVInspector(value) {
+      if (typeof value !== 'string') return null;
+      const raw = value.trim();
+      if (!raw) return null;
+
+      // Match only trailing :line or :line:column to avoid Windows drive letter issues
+      const match = raw.match(/:([\d]+)(?::([\d]+))?$/);
+      if (!match) {
+        // No line info, return file only
+        return { file: raw };
+      }
+
+      const file = raw.slice(0, match.index).trim();
+      if (!file) return null;
+
+      const line = Number.parseInt(match[1], 10);
+      const column = match[2] ? Number.parseInt(match[2], 10) : undefined;
+
+      return {
+        file,
+        line: Number.isFinite(line) && line > 0 ? line : undefined,
+        column: Number.isFinite(column) && column > 0 ? column : undefined,
+      };
+    },
+
+    /**
+     * Walk up DOM tree to find data-v-inspector attribute.
+     * This attribute is injected by @vitejs/plugin-vue-inspector.
+     *
+     * @param {Element} element - Starting DOM element
+     * @param {number} [maxDepth=15] - Maximum depth to traverse
+     * @returns {{ file: string, line?: number, column?: number } | null}
+     */
+    findInspectorLocation(element, maxDepth = 15) {
+      try {
+        let node = element;
+        for (let depth = 0; depth < maxDepth && node; depth++) {
+          if (typeof node.getAttribute === 'function') {
+            const attr = node.getAttribute('data-v-inspector');
+            if (attr) {
+              const parsed = this.parseVInspector(attr);
+              if (parsed?.file) return parsed;
+            }
+          }
+          node = node.parentElement;
+        }
+      } catch {
+        // Best-effort extraction
+      }
+      return null;
+    },
+
+    /**
+     * Get Vue component debug source.
+     * Priority: data-v-inspector (has line/column) > type.__file (file only)
+     *
+     * @param {object} instance - Vue component instance
+     * @param {Element} targetElement - DOM element for inspector lookup
+     * @returns {{ file: string, line?: number, column?: number, componentName?: string } | null}
+     */
+    getDebugSource(instance, targetElement) {
+      try {
+        // Priority 1: data-v-inspector attribute (has precise line/column)
+        const inspector = this.findInspectorLocation(targetElement);
+        if (inspector?.file) {
+          return {
+            file: inspector.file,
+            line: inspector.line,
+            column: inspector.column,
+            componentName: this.getComponentName(instance),
+          };
+        }
+
+        // Priority 2: type.__file (file only, no line/column)
+        const typeFile = instance?.type?.__file;
+        if (typeof typeFile === 'string') {
+          const file = typeFile.trim();
+          if (file) {
+            return {
+              file,
+              componentName: this.getComponentName(instance),
+            };
+          }
+        }
+      } catch {
+        // Best-effort extraction
+      }
+      return null;
+    },
+
+    /**
+     * Get Vue 3 version from instance.
+     * Note: This adapter only supports Vue 3 (via __vueParentComponent).
+     *
+     * @param {object} instance - Vue 3 component instance
+     * @returns {string | undefined}
+     */
+    getVersion(instance) {
+      try {
+        // Vue 3: Get version from app context
+        const appVersion = instance?.appContext?.app?.version;
+        if (typeof appVersion === 'string' && appVersion.trim()) {
+          return appVersion.trim();
+        }
+      } catch {
+        // Best-effort
+      }
+      return undefined;
     },
 
     /**
@@ -1385,7 +1601,9 @@
     if (init?.hookStatus) data.hookStatus = init.hookStatus;
     if (typeof init?.needsRefresh === 'boolean') data.needsRefresh = init.needsRefresh;
     if (init?.framework) data.framework = init.framework;
+    if (init?.frameworkVersion) data.frameworkVersion = init.frameworkVersion;
     if (init?.componentName) data.componentName = init.componentName;
+    if (init?.debugSource) data.debugSource = init.debugSource;
     if (init?.props) data.props = init.props;
     if (init?.capabilities) data.capabilities = init.capabilities;
     if (init?.meta) data.meta = init.meta;
@@ -1428,9 +1646,12 @@
       const fw = target ? FrameworkDetector.detect(target) : { framework: 'unknown', data: null };
 
       let componentName;
+      let debugSource;
       let canRead = false;
       let canWrite = false;
       let needsRefresh = false;
+
+      let frameworkVersion;
 
       if (fw.framework === 'react') {
         const fiberInfo = ReactAdapter.resolveFiberWithRenderer(target, hookInfo);
@@ -1439,12 +1660,19 @@
           : null;
 
         componentName = componentFiber ? ReactAdapter.getComponentName(componentFiber) : undefined;
+        // Extract debug source from component fiber or raw fiber
+        const sourceFiber = componentFiber || fiberInfo.fiber;
+        debugSource = sourceFiber ? ReactAdapter.getDebugSource(sourceFiber) : undefined;
+        // Pass specific renderer to prioritize its version in multi-renderer scenarios
+        frameworkVersion = ReactAdapter.getVersion(hookInfo, fiberInfo.renderer);
         canRead = Boolean(componentFiber);
         canWrite = hookStatus === HOOK_STATUS.READY && Boolean(componentFiber);
         needsRefresh = canRead && hookStatus !== HOOK_STATUS.READY;
       } else if (fw.framework === 'vue') {
         const instance = fw.data;
         componentName = VueAdapter.getComponentName(instance);
+        debugSource = instance ? VueAdapter.getDebugSource(instance, target) : undefined;
+        frameworkVersion = VueAdapter.getVersion(instance);
         canRead = Boolean(instance);
         canWrite = Boolean(instance) && VueAdapter.isDevBuild(instance);
         needsRefresh = false;
@@ -1453,7 +1681,9 @@
       const data = buildResponseData({
         hookStatus,
         framework: fw.framework,
+        frameworkVersion,
         componentName,
+        debugSource,
         capabilities: makeCapabilities({ canRead, canWrite, canWriteHooks: false }),
         needsRefresh,
       });
@@ -1494,10 +1724,18 @@
           ? ReactAdapter.findNearestComponentFiber(fiberInfo.fiber)
           : null;
 
+        // Extract debug source even if component fiber not found
+        const sourceFiber = componentFiber || fiberInfo.fiber;
+        const debugSource = sourceFiber ? ReactAdapter.getDebugSource(sourceFiber) : undefined;
+        // Pass specific renderer to prioritize its version in multi-renderer scenarios
+        const frameworkVersion = ReactAdapter.getVersion(hookInfo, fiberInfo.renderer);
+
         if (!componentFiber) {
           const data = buildResponseData({
             hookStatus,
             framework: 'react',
+            frameworkVersion,
+            debugSource,
             capabilities: makeCapabilities({ canRead: false, canWrite: false }),
             needsRefresh: false,
           });
@@ -1519,7 +1757,9 @@
         const data = buildResponseData({
           hookStatus,
           framework: 'react',
+          frameworkVersion,
           componentName,
+          debugSource,
           props: serialized,
           capabilities: makeCapabilities({ canRead: true, canWrite, canWriteHooks: false }),
           needsRefresh,
@@ -1530,10 +1770,13 @@
 
       if (fw.framework === 'vue') {
         const instance = fw.data;
+        const frameworkVersion = VueAdapter.getVersion(instance);
+
         if (!instance) {
           const data = buildResponseData({
             hookStatus,
             framework: 'vue',
+            frameworkVersion,
             capabilities: makeCapabilities({ canRead: false, canWrite: false }),
             needsRefresh: false,
           });
@@ -1546,6 +1789,7 @@
         }
 
         const componentName = VueAdapter.getComponentName(instance);
+        const debugSource = VueAdapter.getDebugSource(instance, target);
 
         // Read both props and attrs
         let rootProps = null;
@@ -1592,7 +1836,9 @@
         const data = buildResponseData({
           hookStatus,
           framework: 'vue',
+          frameworkVersion,
           componentName,
+          debugSource,
           props: serialized,
           capabilities: makeCapabilities({ canRead: true, canWrite, canWriteHooks: false }),
           needsRefresh: false,

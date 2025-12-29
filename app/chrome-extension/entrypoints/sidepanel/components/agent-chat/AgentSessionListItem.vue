@@ -125,7 +125,7 @@
           <!-- Open Project Button -->
           <button
             v-if="!isEditing"
-            class="p-1.5 rounded-md transition-colors"
+            class="p-1.5 rounded-md transition-colors cursor-pointer"
             :style="actionButtonStyle"
             title="Open project"
             @click.stop="handleOpenProject"
@@ -149,7 +149,7 @@
           <!-- Rename Button -->
           <button
             v-if="!isEditing"
-            class="p-1.5 rounded-md transition-colors"
+            class="p-1.5 rounded-md transition-colors cursor-pointer"
             :style="actionButtonStyle"
             title="Rename"
             @click.stop="startRename"
@@ -166,7 +166,7 @@
           <!-- Delete Button -->
           <button
             v-if="!isEditing"
-            class="p-1.5 rounded-md transition-colors"
+            class="p-1.5 rounded-md transition-colors cursor-pointer"
             :style="deleteButtonStyle"
             title="Delete"
             @click.stop="handleDelete"

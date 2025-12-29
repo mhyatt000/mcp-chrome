@@ -39,7 +39,13 @@
       "Bash(grep:*)",
       "Bash(pnpm -F chrome-mcp-extension run compile:*)",
       "Bash(pnpm -F native-server run compile:*)",
-      "Bash(pnpm vue-tsc:*)"
+      "Bash(pnpm vue-tsc:*)",
+      "Bash(pnpm -F chrome-mcp-shared run build:*)",
+      "Bash(timeout 10 npm run dev:*)",
+      "Bash(pnpm -F chrome-mcp-extension vue-tsc:*)",
+      "Bash(timeout:*)",
+      "Bash(npm pack:*)",
+      "Bash(ls /Users/hang/code/ai/mcp-chrome/app/chrome-extension/entrypoints/*.content.ts)"
     ],
     "deny": [],
     "ask": []

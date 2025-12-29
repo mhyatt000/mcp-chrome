@@ -32,7 +32,7 @@
         v-for="attachment in item.attachments"
         :key="`${attachment.messageId}:${attachment.index}`"
         type="button"
-        class="relative group w-16 h-16 rounded-lg overflow-hidden cursor-pointer transition-opacity hover:opacity-90"
+        class="relative group w-16 h-16 rounded-lg overflow-hidden transition-opacity hover:opacity-90 cursor-pointer"
         :style="{
           backgroundColor: 'var(--ac-surface-muted)',
           border: 'var(--ac-border-width) solid var(--ac-border)',
@@ -102,7 +102,7 @@
           <!-- Close button -->
           <button
             type="button"
-            class="absolute top-2 right-2 p-1 rounded-full transition-colors hover:bg-black/20"
+            class="absolute top-2 right-2 p-1 rounded-full transition-colors hover:bg-black/20 cursor-pointer"
             :style="{ color: 'white' }"
             aria-label="Close image preview"
             @click="closeViewer"

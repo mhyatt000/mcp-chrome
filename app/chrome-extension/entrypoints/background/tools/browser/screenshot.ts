@@ -2,7 +2,6 @@ import { createErrorResponse, ToolResult } from '@/common/tool-handler';
 import { BaseBrowserToolExecutor } from '../base-browser';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
 import { TOOL_MESSAGE_TYPES } from '@/common/message-types';
-import { TIMEOUTS, ERROR_MESSAGES } from '@/common/constants';
 import {
   canvasToDataURL,
   createImageBitmapFromUrl,
@@ -58,6 +57,51 @@ interface ScreenshotToolParams {
   maxHeight?: number; // Maximum height to capture in pixels (for infinite scroll pages)
 }
 
+/** Page details returned by screenshot-helper content script */
+interface ScreenshotPageDetails {
+  totalWidth: number;
+  totalHeight: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  devicePixelRatio: number;
+  currentScrollX: number;
+  currentScrollY: number;
+}
+
+const PAGE_DETAILS_REQUIRED_FIELDS: Array<keyof ScreenshotPageDetails> = [
+  'totalWidth',
+  'totalHeight',
+  'viewportWidth',
+  'viewportHeight',
+  'devicePixelRatio',
+  'currentScrollX',
+  'currentScrollY',
+];
+
+/**
+ * Validates and asserts that the response from content script contains valid page details
+ */
+function assertValidPageDetails(details: unknown): ScreenshotPageDetails {
+  if (!details || typeof details !== 'object') {
+    throw new Error(
+      'Screenshot helper did not respond. The content script may not be injected or cannot run on this page.',
+    );
+  }
+
+  const candidate = details as Partial<ScreenshotPageDetails>;
+  const invalidFields = PAGE_DETAILS_REQUIRED_FIELDS.filter(
+    (field) => typeof candidate[field] !== 'number' || !Number.isFinite(candidate[field]),
+  );
+
+  if (invalidFields.length > 0) {
+    throw new Error(
+      `Screenshot helper returned invalid page details (missing/invalid: ${invalidFields.join(', ')}).`,
+    );
+  }
+
+  return candidate as ScreenshotPageDetails;
+}
+
 /**
  * Tool for capturing screenshots of web pages
  */
@@ -98,16 +142,18 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
     let finalImageWidthCss: number | undefined;
     let finalImageHeightCss: number | undefined;
     const results: any = { base64: null, fileSaved: false };
-    let originalScroll = { x: 0, y: 0 };
+    let originalScroll: { x: number; y: number } | null = null;
+    let didPreparePage = false;
+    let pageDetails: ScreenshotPageDetails | undefined;
 
     try {
       const background = args.background === true;
-      // If we need content-script assisted capture (element/fullPage), we may need the tab active in its window.
-      // For simple viewport-only capture without selector/fullPage and background=true, prefer CDP capture.
-      const needInjection = fullPage || !!selector;
-      if (!needInjection && background) {
+      // CDP path: background=true with simple viewport capture (no fullPage, no selector)
+      const canUseCdpCapture = background && !fullPage && !selector;
+
+      // === Path 1: CDP viewport capture (no content script needed) ===
+      if (canUseCdpCapture) {
         try {
-          // CDP capture of current viewport without focusing/activating
           const tabId = tab.id!;
           const { cdpSessionManager } = await import('@/utils/cdp-session-manager');
           await cdpSessionManager.withSession(tabId, 'screenshot', async () => {
@@ -126,73 +172,84 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
             const shot: any = await cdpSessionManager.sendCommand(tabId, 'Page.captureScreenshot', {
               format: 'png',
             });
-            finalImageDataUrl = `data:image/png;base64,${shot?.data || ''}`;
+            const base64Data = typeof shot?.data === 'string' ? shot.data : '';
+            if (!base64Data) {
+              throw new Error('CDP Page.captureScreenshot returned empty data');
+            }
+            finalImageDataUrl = `data:image/png;base64,${base64Data}`;
             finalImageWidthCss = Math.round(viewport.clientWidth || 800);
             finalImageHeightCss = Math.round(viewport.clientHeight || 600);
           });
         } catch (e) {
-          console.warn('CDP viewport capture failed, falling back to captureVisibleTab path:', e);
+          console.warn('CDP viewport capture failed, falling back to helper path:', e);
         }
       }
 
-      if (!finalImageDataUrl && needInjection) {
+      // === Path 2: Helper-assisted capture (requires content script) ===
+      if (!finalImageDataUrl) {
+        // Always inject helper when we need pageDetails
         await this.injectContentScript(tab.id!, ['inject-scripts/screenshot-helper.js']);
-      }
-      // Wait for script initialization
-      await new Promise((resolve) => setTimeout(resolve, SCREENSHOT_CONSTANTS.SCRIPT_INIT_DELAY));
-      // 1. Prepare page (hide scrollbars, potentially fixed elements)
-      await this.sendMessageToTab(tab.id!, {
-        action: TOOL_MESSAGE_TYPES.SCREENSHOT_PREPARE_PAGE_FOR_CAPTURE,
-        options: { fullPage },
-      });
+        await new Promise((resolve) => setTimeout(resolve, SCREENSHOT_CONSTANTS.SCRIPT_INIT_DELAY));
 
-      // Get initial page details, including original scroll position
-      const pageDetails = await this.sendMessageToTab(tab.id!, {
-        action: TOOL_MESSAGE_TYPES.SCREENSHOT_GET_PAGE_DETAILS,
-      });
-      originalScroll = { x: pageDetails.currentScrollX, y: pageDetails.currentScrollY };
-
-      if (fullPage) {
-        this.logInfo('Capturing full page...');
-        const dataUrl = await this._captureFullPage(tab.id!, args, pageDetails);
-        finalImageDataUrl = dataUrl;
-        // For full page, compute final CSS size from provided width/height fallback to pageDetails
-        if (args.width && args.height) {
-          finalImageWidthCss = args.width;
-          finalImageHeightCss = args.height;
-        } else if (args.width && !args.height) {
-          finalImageWidthCss = args.width;
-          // height will be scaled by aspect ratio; approximate with page ratio
-          const ratio = pageDetails.totalHeight / pageDetails.totalWidth;
-          finalImageHeightCss = Math.round(args.width * ratio);
-        } else if (!args.width && args.height) {
-          finalImageHeightCss = args.height;
-          const ratio = pageDetails.totalWidth / pageDetails.totalHeight;
-          finalImageWidthCss = Math.round(args.height * ratio);
-        } else {
-          finalImageWidthCss = pageDetails.totalWidth;
-          finalImageHeightCss = pageDetails.totalHeight;
+        // Prepare page (hide scrollbars, handle fixed elements)
+        const prepareResp = await this.sendMessageToTab(tab.id!, {
+          action: TOOL_MESSAGE_TYPES.SCREENSHOT_PREPARE_PAGE_FOR_CAPTURE,
+          options: { fullPage },
+        });
+        if (!prepareResp || prepareResp.success !== true) {
+          throw new Error(
+            'Screenshot helper did not acknowledge page preparation. The content script may not be injected or cannot run on this page.',
+          );
         }
-      } else if (selector) {
-        this.logInfo(`Capturing element: ${selector}`);
-        const cropped = await this._captureElement(tab.id!, args, pageDetails.devicePixelRatio);
-        finalImageDataUrl = cropped;
-        // For element capture, if target width/height provided, respect them; otherwise use element rect size
-        if (args.width && args.height) {
-          finalImageWidthCss = args.width;
-          finalImageHeightCss = args.height;
+        didPreparePage = true;
+
+        // Get page details with validation
+        const rawPageDetails = await this.sendMessageToTab(tab.id!, {
+          action: TOOL_MESSAGE_TYPES.SCREENSHOT_GET_PAGE_DETAILS,
+        });
+        pageDetails = assertValidPageDetails(rawPageDetails);
+        originalScroll = { x: pageDetails.currentScrollX, y: pageDetails.currentScrollY };
+
+        if (fullPage) {
+          this.logInfo('Capturing full page...');
+          finalImageDataUrl = await this._captureFullPage(tab.id!, args, pageDetails);
+          // Compute final CSS size
+          if (args.width && args.height) {
+            finalImageWidthCss = args.width;
+            finalImageHeightCss = args.height;
+          } else if (args.width && !args.height) {
+            finalImageWidthCss = args.width;
+            const ratio = pageDetails.totalHeight / pageDetails.totalWidth;
+            finalImageHeightCss = Math.round(args.width * ratio);
+          } else if (!args.width && args.height) {
+            finalImageHeightCss = args.height;
+            const ratio = pageDetails.totalWidth / pageDetails.totalHeight;
+            finalImageWidthCss = Math.round(args.height * ratio);
+          } else {
+            finalImageWidthCss = pageDetails.totalWidth;
+            finalImageHeightCss = pageDetails.totalHeight;
+          }
+        } else if (selector) {
+          this.logInfo(`Capturing element: ${selector}`);
+          finalImageDataUrl = await this._captureElement(
+            tab.id!,
+            args,
+            pageDetails.devicePixelRatio,
+          );
+          if (args.width && args.height) {
+            finalImageWidthCss = args.width;
+            finalImageHeightCss = args.height;
+          } else {
+            finalImageWidthCss = pageDetails.viewportWidth;
+            finalImageHeightCss = pageDetails.viewportHeight;
+          }
         } else {
-          // Fallback to visible element rect (already used for crop)
-          // We do not have easy access to rect here; use viewport as conservative default
+          // Visible area only
+          this.logInfo('Capturing visible area...');
+          finalImageDataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
           finalImageWidthCss = pageDetails.viewportWidth;
           finalImageHeightCss = pageDetails.viewportHeight;
         }
-      } else if (!finalImageDataUrl) {
-        // Visible area only
-        this.logInfo('Capturing visible area...');
-        finalImageDataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
-        finalImageWidthCss = pageDetails.viewportWidth;
-        finalImageHeightCss = pageDetails.viewportHeight;
       }
 
       if (!finalImageDataUrl) {
@@ -209,12 +266,15 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
           } catch {
             // ignore
           }
+          // Use pageDetails if available, otherwise fall back to final image dimensions
+          const viewportWidth = pageDetails?.viewportWidth ?? finalImageWidthCss;
+          const viewportHeight = pageDetails?.viewportHeight ?? finalImageHeightCss;
           screenshotContextManager.setContext(tab.id!, {
             screenshotWidth: finalImageWidthCss,
             screenshotHeight: finalImageHeightCss,
-            viewportWidth: pageDetails.viewportWidth,
-            viewportHeight: pageDetails.viewportHeight,
-            devicePixelRatio: pageDetails.devicePixelRatio,
+            viewportWidth,
+            viewportHeight,
+            devicePixelRatio: pageDetails?.devicePixelRatio,
             hostname,
           });
         }
@@ -287,15 +347,21 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
         `Screenshot error: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
       );
     } finally {
-      // 3. Reset page
-      try {
-        await this.sendMessageToTab(tab.id!, {
-          action: TOOL_MESSAGE_TYPES.SCREENSHOT_RESET_PAGE_AFTER_CAPTURE,
-          scrollX: originalScroll.x,
-          scrollY: originalScroll.y,
-        });
-      } catch (err) {
-        console.warn('Failed to reset page, tab might have closed:', err);
+      // 3. Reset page only if we prepared it
+      if (didPreparePage) {
+        try {
+          // Only include scroll position if we successfully captured it
+          const resetMessage: Record<string, unknown> = {
+            action: TOOL_MESSAGE_TYPES.SCREENSHOT_RESET_PAGE_AFTER_CAPTURE,
+          };
+          if (originalScroll) {
+            resetMessage.scrollX = originalScroll.x;
+            resetMessage.scrollY = originalScroll.y;
+          }
+          await this.sendMessageToTab(tab.id!, resetMessage);
+        } catch (err) {
+          console.warn('Failed to reset page, tab might have closed:', err);
+        }
       }
     }
 

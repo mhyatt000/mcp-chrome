@@ -104,7 +104,7 @@
             <!-- Rename Button -->
             <button
               v-if="editingSessionId !== session.id"
-              class="p-1 ac-btn"
+              class="p-1 ac-btn cursor-pointer"
               :style="{
                 color: 'var(--ac-text-muted, #6e6e6e)',
                 borderRadius: 'var(--ac-radius-button)',
@@ -123,7 +123,7 @@
             </button>
             <!-- Delete Button -->
             <button
-              class="p-1 ac-btn"
+              class="p-1 ac-btn cursor-pointer"
               :style="{
                 color: 'var(--ac-danger, #dc2626)',
                 borderRadius: 'var(--ac-radius-button)',

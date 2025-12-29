@@ -8,26 +8,28 @@
       <input class="search-input" placeholder="Insert node..." v-model="q" />
     </div>
 
-    <!-- Flow -->
-    <div class="section-divider">
-      <span class="divider-label">Flow</span>
-    </div>
-    <div class="nodes-section">
-      <button
-        v-for="n in filtered.Flow"
-        :key="n.type"
-        class="node-btn"
-        draggable="true"
-        @dragstart="onDragStart(n.type, $event)"
-        @click="$emit('addNode', n.type)"
-        :title="n.label"
-      >
-        <div class="btn-icon" :class="n.iconClass">
-          <component :is="iconComp(n.type)" />
-        </div>
-        <span class="btn-label">{{ n.label }}</span>
-      </button>
-    </div>
+    <!-- Flow (only show if there are nodes in this category) -->
+    <template v-if="filtered.Flow.length > 0">
+      <div class="section-divider">
+        <span class="divider-label">Flow</span>
+      </div>
+      <div class="nodes-section">
+        <button
+          v-for="n in filtered.Flow"
+          :key="n.type"
+          class="node-btn"
+          draggable="true"
+          @dragstart="onDragStart(n.type, $event)"
+          @click="$emit('addNode', n.type)"
+          :title="n.label"
+        >
+          <div class="btn-icon" :class="n.iconClass">
+            <component :is="iconComp(n.type)" />
+          </div>
+          <span class="btn-label">{{ n.label }}</span>
+        </button>
+      </div>
+    </template>
 
     <!-- Actions -->
     <div class="nodes-section">
@@ -155,6 +157,7 @@ const filtered = computed(() => {
       )
     : items;
   return {
+    Flow: list.filter((x) => x.category === 'Flow'),
     Actions: list.filter((x) => x.category === 'Actions'),
     Tools: list.filter((x) => x.category === 'Tools'),
     Tabs: list.filter((x) => x.category === 'Tabs'),

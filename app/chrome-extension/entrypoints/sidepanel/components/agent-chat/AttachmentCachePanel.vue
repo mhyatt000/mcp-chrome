@@ -134,7 +134,7 @@
           <div class="flex items-center gap-2">
             <button
               type="button"
-              class="px-3 py-2 text-xs font-medium"
+              class="px-3 py-2 text-xs font-medium cursor-pointer"
               :style="{
                 backgroundColor: 'var(--ac-chip-bg)',
                 color: 'var(--ac-chip-text)',
@@ -148,7 +148,7 @@
             </button>
             <button
               type="button"
-              class="px-3 py-2 text-xs font-medium"
+              class="px-3 py-2 text-xs font-medium cursor-pointer"
               :style="{
                 backgroundColor: 'transparent',
                 color: 'var(--ac-text-muted)',
@@ -230,7 +230,7 @@
             <div class="flex items-center gap-1.5 flex-wrap justify-end">
               <button
                 type="button"
-                class="px-2 py-1 text-[11px] font-medium"
+                class="px-2 py-1 text-[11px] font-medium cursor-pointer"
                 :style="chipStyle"
                 :disabled="isClearing || selectableProjectIds.length === 0"
                 @click="selectAll"
@@ -239,7 +239,7 @@
               </button>
               <button
                 type="button"
-                class="px-2 py-1 text-[11px] font-medium"
+                class="px-2 py-1 text-[11px] font-medium cursor-pointer"
                 :style="chipStyle"
                 :disabled="isClearing || selectableProjectIds.length === 0"
                 @click="invertSelection"
@@ -248,7 +248,7 @@
               </button>
               <button
                 type="button"
-                class="px-2 py-1 text-[11px] font-medium"
+                class="px-2 py-1 text-[11px] font-medium cursor-pointer"
                 :style="chipStyle"
                 :disabled="isClearing || selectedCount === 0"
                 @click="clearSelection"
@@ -349,7 +349,7 @@
 
         <button
           type="button"
-          class="px-3 py-2 text-xs font-semibold rounded-lg flex-shrink-0"
+          class="px-3 py-2 text-xs font-semibold rounded-lg flex-shrink-0 cursor-pointer"
           :disabled="!canClear"
           :style="clearButtonStyle"
           @click="clearSelected"

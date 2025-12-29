@@ -428,6 +428,16 @@ export async function updateEngineSessionId(
 }
 
 /**
+ * Touch session activity - updates the updatedAt timestamp.
+ * Used when a message is sent to move the session to the top of the list.
+ */
+export async function touchSessionActivity(sessionId: string): Promise<void> {
+  const db = getDb();
+  const now = new Date().toISOString();
+  await db.update(sessions).set({ updatedAt: now }).where(eq(sessions.id, sessionId));
+}
+
+/**
  * Update the cached management information.
  */
 export async function updateManagementInfo(

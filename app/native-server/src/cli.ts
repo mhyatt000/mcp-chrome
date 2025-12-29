@@ -8,24 +8,11 @@ import {
   colorText,
   registerWithElevatedPermissions,
   ensureExecutionPermissions,
+  writeNodePathFile,
 } from './scripts/utils';
 import { BrowserType, parseBrowserType, detectInstalledBrowsers } from './scripts/browser-config';
 import { runDoctor } from './scripts/doctor';
 import { runReport } from './scripts/report';
-
-// Import writeNodePath from postinstall
-async function writeNodePath(): Promise<void> {
-  try {
-    const nodePath = process.execPath;
-    const nodePathFile = path.join(__dirname, 'node_path.txt');
-
-    console.log(colorText(`Writing Node.js path: ${nodePath}`, 'blue'));
-    fs.writeFileSync(nodePathFile, nodePath, 'utf8');
-    console.log(colorText('✓ Node.js path written for run_host scripts', 'green'));
-  } catch (error: any) {
-    console.warn(colorText(`⚠️ Failed to write Node.js path: ${error.message}`, 'yellow'));
-  }
-}
 
 program
   .version(require('../package.json').version)
@@ -42,7 +29,7 @@ program
   .action(async (options) => {
     try {
       // Write Node.js path for run_host scripts
-      await writeNodePath();
+      writeNodePathFile(__dirname);
 
       // Determine which browsers to register
       let targetBrowsers: BrowserType[] | undefined;

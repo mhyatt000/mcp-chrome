@@ -1,11 +1,11 @@
 <template>
   <div class="flex items-center justify-between w-full">
     <!-- Brand / Context -->
-    <div class="flex items-center gap-3 overflow-hidden">
+    <div class="flex items-center gap-2 overflow-hidden -ml-1">
       <!-- Back Button (when in chat view) -->
       <button
         v-if="showBackButton"
-        class="flex items-center justify-center w-8 h-8 -ml-3 flex-shrink-0 ac-btn"
+        class="flex items-center justify-center w-8 h-8 flex-shrink-0 ac-btn"
         :style="{
           color: 'var(--ac-text-muted)',
           borderRadius: 'var(--ac-radius-button)',
@@ -25,7 +25,7 @@
 
       <!-- Brand -->
       <h1
-        class="text-lg font-medium tracking-tight flex-shrink-0 ml-[-10px]"
+        class="text-lg font-medium tracking-tight flex-shrink-0"
         :style="{
           fontFamily: 'var(--ac-font-heading)',
           color: 'var(--ac-text)',

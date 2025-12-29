@@ -424,7 +424,7 @@ export function registerBuiltinSpecs() {
   registerNodeSpec({
     type: 'executeFlow' as any,
     version: 1,
-    display: { label: '执行子流程', iconClass: 'icon-flow', category: 'Tools' },
+    display: { label: '执行子流程', iconClass: 'icon-exec', category: 'Flow' },
     ports: { inputs: 1, outputs: [{ label: 'default' }] },
     schema: [
       { key: 'flowId', label: '流程ID', type: 'string', required: true },
@@ -545,11 +545,11 @@ export function registerBuiltinSpecs() {
     defaults: { sleep: 1000 },
   });
 
-  // Trigger (builder-only)
+  // Trigger (builder-only, flow-level node)
   registerNodeSpec({
     type: STEP_TYPES.TRIGGER,
     version: 1,
-    display: { label: '触发器', iconClass: 'icon-trigger', category: 'Actions' },
+    display: { label: '触发器', iconClass: 'icon-trigger', category: 'Flow' },
     ports: { inputs: 0, outputs: [{ label: 'default' }] },
     schema: [
       { key: 'enabled', label: '启用', type: 'boolean', default: true },

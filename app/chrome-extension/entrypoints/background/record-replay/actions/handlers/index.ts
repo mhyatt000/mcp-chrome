@@ -11,6 +11,7 @@ import { assertHandler } from './assert';
 import { clickHandler, dblclickHandler } from './click';
 import { foreachHandler, ifHandler, switchFrameHandler, whileHandler } from './control-flow';
 import { delayHandler } from './delay';
+import { setAttributeHandler, triggerEventHandler } from './dom';
 import { dragHandler } from './drag';
 import { extractHandler } from './extract';
 import { fillHandler } from './fill';
@@ -28,6 +29,7 @@ export { assertHandler } from './assert';
 export { clickHandler, dblclickHandler } from './click';
 export { foreachHandler, ifHandler, switchFrameHandler, whileHandler } from './control-flow';
 export { delayHandler } from './delay';
+export { setAttributeHandler, triggerEventHandler } from './dom';
 export { dragHandler } from './drag';
 export { extractHandler } from './extract';
 export { fillHandler } from './fill';
@@ -52,6 +54,7 @@ export * from './common';
  * - Timing: wait, delay
  * - Validation: assert
  * - Data: extract, script, http, screenshot
+ * - DOM Tools: triggerEvent, setAttribute
  * - Tabs: openTab, switchTab, closeTab, handleDownload
  * - Control Flow: if, foreach, while, switchFrame
  *
@@ -78,6 +81,9 @@ const ALL_HANDLERS = [
   scriptHandler,
   httpHandler,
   screenshotHandler,
+  // DOM Tools
+  triggerEventHandler,
+  setAttributeHandler,
   // Tabs
   openTabHandler,
   switchTabHandler,
@@ -109,6 +115,8 @@ export function registerReplayHandlers(registry: ActionRegistry): void {
   registry.register(scriptHandler, { override: true });
   registry.register(httpHandler, { override: true });
   registry.register(screenshotHandler, { override: true });
+  registry.register(triggerEventHandler, { override: true });
+  registry.register(setAttributeHandler, { override: true });
   registry.register(openTabHandler, { override: true });
   registry.register(switchTabHandler, { override: true });
   registry.register(closeTabHandler, { override: true });

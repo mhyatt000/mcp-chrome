@@ -31,7 +31,7 @@
 
             <button
               type="button"
-              class="p-1.5 transition-colors hover:opacity-80"
+              class="p-1.5 transition-colors hover:opacity-80 cursor-pointer"
               :style="closeButtonStyle"
               aria-label="Close expanded editor"
               @click="emit('close')"
@@ -77,7 +77,7 @@
 
                 <!-- Remove button -->
                 <button
-                  class="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  class="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                   :style="removeButtonStyle"
                   title="Remove image"
                   @click="emit('attachment:remove', index)"
@@ -138,7 +138,7 @@
                 <!-- Cancel button: Show when request is active (not just streaming) -->
                 <button
                   v-if="isRequestActive && canCancel && !sending"
-                  class="px-3 py-1.5 text-xs transition-colors"
+                  class="px-3 py-1.5 text-xs transition-colors cursor-pointer"
                   :style="cancelButtonStyle"
                   :disabled="cancelling"
                   @click="emit('cancel')"
@@ -148,7 +148,7 @@
 
                 <!-- Send button -->
                 <button
-                  class="px-3 py-1.5 text-xs font-medium transition-colors"
+                  class="px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer"
                   :style="sendButtonStyle"
                   :disabled="!canSend || sending"
                   @click="handleSubmit"

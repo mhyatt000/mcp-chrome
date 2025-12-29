@@ -57,7 +57,7 @@
         <!-- Dismiss button -->
         <button
           type="button"
-          class="p-1 flex-shrink-0 ac-btn ac-focus-ring"
+          class="p-1 flex-shrink-0 ac-btn ac-focus-ring cursor-pointer"
           :style="{
             color: 'var(--ac-danger)',
             borderRadius: 'var(--ac-radius-button)',

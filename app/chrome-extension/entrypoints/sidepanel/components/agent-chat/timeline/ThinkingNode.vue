@@ -168,7 +168,6 @@ function formatLine(text: string): string {
 .thinking-section {
   display: block;
   margin: 8px 0;
-  border-left: 2px solid var(--ac-accent);
   padding-left: 12px;
   background: var(--ac-surface-muted);
   border-radius: var(--ac-radius-inner);

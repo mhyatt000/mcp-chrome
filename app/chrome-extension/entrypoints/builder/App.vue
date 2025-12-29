@@ -70,6 +70,24 @@
             </svg>
             Rename
           </button>
+          <button
+            class="top-btn"
+            :class="{ active: triggerPanelVisible }"
+            @click="triggerPanelVisible = !triggerPanelVisible"
+            title="管理触发器"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+            </svg>
+            Triggers
+          </button>
           <span class="divider-vert" />
           <button
             class="top-btn"
@@ -153,6 +171,13 @@
         :edge="activeEdge"
         :nodes="store.nodes"
         @remove-edge="store.removeEdge"
+      />
+
+      <TriggerPanel
+        v-if="triggerPanelVisible && store.flowLocal?.id"
+        class="floating-trigger"
+        :flow-id="store.flowLocal.id"
+        @close="triggerPanelVisible = false"
       />
 
       <div class="bottom-toolbar">
@@ -246,8 +271,22 @@
 <script lang="ts" setup>
 // Dedicated full-page builder using the same inner components as popup modal
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
-import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
 import type { Flow as FlowV2 } from '@/entrypoints/background/record-replay/types';
+import type { FlowV3 } from '@/entrypoints/background/record-replay-v3/domain/flow';
+import type {
+  FlowId,
+  NodeId,
+  TriggerId,
+} from '@/entrypoints/background/record-replay-v3/domain/ids';
+import type { JsonObject } from '@/entrypoints/background/record-replay-v3/domain/json';
+import type { TriggerSpec } from '@/entrypoints/background/record-replay-v3/domain/triggers';
+import { useRRV3Rpc } from '@/entrypoints/shared/composables';
+import {
+  flowV2ToV3ForRpc,
+  flowV3ToV2ForBuilder,
+  isFlowV3,
+  extractFlowCandidates,
+} from '@/entrypoints/shared/utils';
 
 import { useBuilderStore } from '@/entrypoints/popup/components/builder/store/useBuilderStore';
 import { validateFlow } from '@/entrypoints/popup/components/builder/model/validation';
@@ -255,6 +294,7 @@ import Canvas from '@/entrypoints/popup/components/builder/components/Canvas.vue
 import Sidebar from '@/entrypoints/popup/components/builder/components/Sidebar.vue';
 import PropertyPanel from '@/entrypoints/popup/components/builder/components/PropertyPanel.vue';
 import EdgePropertyPanel from '@/entrypoints/popup/components/builder/components/EdgePropertyPanel.vue';
+import TriggerPanel from '@/entrypoints/popup/components/builder/components/TriggerPanel.vue';
 
 const title = ref('工作流编辑器');
 // theme state: persisted in localStorage and default to system preference
@@ -269,6 +309,12 @@ function toggleTheme() {
   } catch {}
 }
 const store = useBuilderStore();
+
+// V3 RPC client
+const rpc = useRRV3Rpc({
+  autoConnect: true,
+  onError: (message) => pushToast(message, 'error'),
+});
 
 // toast event bus (listen to rr_toast)
 type ToastItem = { id: string; message: string; level: 'info' | 'warn' | 'error' };
@@ -304,13 +350,17 @@ async function bootstrap() {
   const q = getQuery();
   if (q.flowId) {
     try {
-      const res = await chrome.runtime.sendMessage({
-        type: BACKGROUND_MESSAGE_TYPES.RR_GET_FLOW,
-        flowId: q.flowId,
-      });
-      if (res && res.success && res.flow) {
-        store.initFromFlow(res.flow);
-        title.value = `编辑：${res.flow.name || res.flow.id}`;
+      await rpc.ensureConnected();
+      const flowV3 = (await rpc.request('rr_v3.getFlow', {
+        flowId: q.flowId as FlowId,
+      })) as FlowV3 | null;
+
+      if (flowV3) {
+        const { flow: flowV2, warnings } = flowV3ToV2ForBuilder(flowV3);
+        warnings.forEach((w) => pushToast(w, 'warn'));
+        store.initFromFlow(flowV2);
+        title.value = `编辑：${flowV2.name || flowV2.id}`;
+
         if (q.focus) {
           setTimeout(() => {
             try {
@@ -320,24 +370,38 @@ async function bootstrap() {
             } catch {}
           }, 0);
         }
+      } else {
+        // Flow not found - notify user and initialize empty flow
+        pushToast(`工作流 "${q.flowId}" 未找到，已创建新工作流`, 'warn');
+        initEmptyFlow();
       }
-    } catch {}
+    } catch (e) {
+      pushToast(`加载工作流失败：${e instanceof Error ? e.message : String(e)}`, 'error');
+      initEmptyFlow();
+    }
   } else if (q.new === '1') {
-    // Initialize an empty flow
-    const now = Date.now();
-    const empty: FlowV2 = {
-      id: `flow_${now}`,
-      name: '新建工作流',
-      version: 1,
-      steps: [],
-      variables: [],
-      meta: {
-        createdAt: new Date(now).toISOString(),
-        updatedAt: new Date(now).toISOString(),
-      } as any,
-    } as any;
-    store.initFromFlow(empty);
+    initEmptyFlow();
   }
+}
+
+/**
+ * 初始化一个空的工作流
+ */
+function initEmptyFlow() {
+  const now = Date.now();
+  const empty: FlowV2 = {
+    id: `flow_${now}`,
+    name: '新建工作流',
+    version: 1,
+    steps: [],
+    variables: [],
+    meta: {
+      createdAt: new Date(now).toISOString(),
+      updatedAt: new Date(now).toISOString(),
+    } as any,
+  } as any;
+  store.initFromFlow(empty);
+  title.value = '新建工作流';
 }
 
 // Builder helpers mostly ported from modal component
@@ -393,6 +457,9 @@ function fitAll() {
   fitSeq.value++;
 }
 
+// trigger panel state
+const triggerPanelVisible = ref(false);
+
 // rename dialog
 const renameVisible = ref(false);
 const renameName = ref('');
@@ -408,171 +475,295 @@ function applyRename() {
   renameVisible.value = false;
 }
 
-async function save() {
-  // Use exportFlowForSave to properly handle subflow editing:
-  // - Flushes current canvas state back to flowLocal (including subflow edits)
-  // - Returns deep copy with correct nodes/edges from flowLocal
-  // Note: steps are NOT generated - nodes/edges are the source of truth
-  const result = store.exportFlowForSave();
-  await chrome.runtime.sendMessage({ type: BACKGROUND_MESSAGE_TYPES.RR_SAVE_FLOW, flow: result });
+/**
+ * 保存 Flow 到 V3 RPC
+ * @returns 保存成功返回 FlowV3，失败返回 null
+ */
+async function save(): Promise<FlowV3 | null> {
   try {
-    // Use main flow nodes for trigger sync (not current canvas which may be subflow)
-    await syncTriggersAndSchedules(result.id, result.nodes || []);
-  } catch {}
+    // Use exportFlowForSave to properly handle subflow editing:
+    // - Flushes current canvas state back to flowLocal (including subflow edits)
+    // - Returns deep copy with correct nodes/edges from flowLocal
+    // Note: steps are NOT generated - nodes/edges are the source of truth
+    const flowV2 = store.exportFlowForSave();
+    await rpc.ensureConnected();
+
+    // Convert V2 -> V3 for RPC
+    const { flow: flowV3, warnings: convWarnings } = flowV2ToV3ForRpc(flowV2);
+    convWarnings.forEach((w) => pushToast(w, 'warn'));
+
+    // Save via RPC (cast FlowV3 to JsonObject for RPC compatibility)
+    const saved = (await rpc.request('rr_v3.saveFlow', {
+      flow: flowV3 as unknown as JsonObject,
+    })) as unknown as FlowV3;
+
+    // Sync timestamps back to local state
+    if (!store.flowLocal.meta) {
+      (store.flowLocal as any).meta = {};
+    }
+    (store.flowLocal as any).meta.createdAt = saved.createdAt;
+    (store.flowLocal as any).meta.updatedAt = saved.updatedAt;
+
+    // Sync triggers (best-effort, don't block save result)
+    try {
+      await syncTriggersAndSchedules(flowV2.id, flowV2.nodes || []);
+    } catch {}
+
+    return saved;
+  } catch (e) {
+    pushToast(`保存失败：${e instanceof Error ? e.message : String(e)}`, 'error');
+    return null;
+  }
 }
 
-function trigId(flowId: string, nodeId: string, kind: string) {
-  return `trg_${flowId}_${nodeId}_${kind}`;
+// ==================== Trigger Sync Helpers ====================
+
+function trigId(flowId: string, nodeId: string, kind: string): TriggerId {
+  return `trg_${flowId}_${nodeId}_${kind}` as TriggerId;
 }
 
-function schId(flowId: string, nodeId: string, idx: number) {
-  return `sch_${flowId}_${nodeId}_${idx}`;
+function schId(flowId: string, nodeId: string, idx: number): TriggerId {
+  return `sch_${flowId}_${nodeId}_${idx}` as TriggerId;
 }
 
-async function syncTriggersAndSchedules(flowId: string, nodes: any[]) {
-  const triggersNeeded: any[] = [];
-  const schedulesNeeded: any[] = [];
+/**
+ * 将 V2 schedule 配置转换为 cron 表达式
+ * @returns cron 表达式或 null（如果无法转换）
+ */
+function scheduleToCron(schedule: { type?: string; when?: string }): string | null {
+  if (!schedule) return null;
+
+  const type = String(schedule.type || '').trim();
+  const when = String(schedule.when || '').trim();
+
+  if (type === 'interval') {
+    const minutesRaw = Number(when);
+    if (!Number.isFinite(minutesRaw)) return null;
+    const minutes = Math.max(1, Math.round(minutesRaw));
+    if (minutes < 60) return `*/${minutes} * * * *`;
+    const hours = Math.max(1, Math.round(minutes / 60));
+    return `0 */${hours} * * *`;
+  }
+
+  if (type === 'daily') {
+    const [hRaw, mRaw] = when.split(':');
+    const hourRaw = Number(hRaw);
+    const minuteRaw = Number(mRaw);
+    if (!Number.isFinite(hourRaw) || !Number.isFinite(minuteRaw)) return null;
+    const hour = Math.min(23, Math.max(0, Math.floor(hourRaw)));
+    const minute = Math.min(59, Math.max(0, Math.floor(minuteRaw)));
+    return `${minute} ${hour} * * *`;
+  }
+
+  // V3 cron 不支持 'once' 一次性定时
+  return null;
+}
+
+/**
+ * 从 trigger 节点配置同步触发器到 V3 存储
+ * @description V2 schedules 会转换为 V3 cron triggers
+ */
+async function syncTriggersAndSchedules(flowId: string, nodes: unknown[]) {
+  const triggersNeeded: TriggerSpec[] = [];
   const tnodes = (nodes || []).filter((n: any) => n && n.type === 'trigger');
-  for (const n of tnodes) {
+
+  for (const n of tnodes as any[]) {
     const cfg = n.config || {};
     const enabled = cfg.enabled !== false;
+
+    // URL trigger
     if (cfg.modes?.url && Array.isArray(cfg.url?.rules) && cfg.url.rules.length) {
       triggersNeeded.push({
         id: trigId(flowId, n.id, 'url'),
-        type: 'url',
+        kind: 'url',
         enabled,
-        flowId,
+        flowId: flowId as FlowId,
         match: cfg.url.rules,
       });
     }
+
+    // Context menu trigger
     if (cfg.modes?.contextMenu && cfg.contextMenu?.title) {
       triggersNeeded.push({
         id: trigId(flowId, n.id, 'menu'),
-        type: 'contextMenu',
+        kind: 'contextMenu',
         enabled,
-        flowId,
+        flowId: flowId as FlowId,
         title: cfg.contextMenu.title,
-        contexts: cfg.contextMenu.contexts || ['all'],
+        contexts: (Array.isArray(cfg.contextMenu.contexts)
+          ? cfg.contextMenu.contexts
+          : ['all']
+        ).map(String),
       });
     }
+
+    // Command trigger
     if (cfg.modes?.command && cfg.command?.commandKey) {
       triggersNeeded.push({
         id: trigId(flowId, n.id, 'cmd'),
-        type: 'command',
+        kind: 'command',
         enabled,
-        flowId,
+        flowId: flowId as FlowId,
         commandKey: String(cfg.command.commandKey),
       });
     }
+
+    // DOM trigger
     if (cfg.modes?.dom && cfg.dom?.selector) {
+      const debounceMsRaw = Number(cfg.dom.debounceMs);
       triggersNeeded.push({
         id: trigId(flowId, n.id, 'dom'),
-        type: 'dom',
+        kind: 'dom',
         enabled,
-        flowId,
-        selector: cfg.dom.selector,
+        flowId: flowId as FlowId,
+        selector: String(cfg.dom.selector),
         appear: cfg.dom.appear !== false,
         once: cfg.dom.once !== false,
-        debounceMs: Number(cfg.dom.debounceMs ?? 800),
+        debounceMs: Number.isFinite(debounceMsRaw) ? debounceMsRaw : 800,
       });
     }
+
+    // Schedule -> Cron trigger (V3 converts schedules to cron)
     if (cfg.modes?.schedule && Array.isArray(cfg.schedules)) {
       cfg.schedules.forEach((s: any, i: number) => {
-        const id = schId(flowId, n.id, i);
-        schedulesNeeded.push({
-          id,
-          flowId,
-          type: s.type || 'interval',
-          when: String(s.when || ''),
-          enabled: s.enabled !== false,
+        const cron = scheduleToCron(s);
+        if (!cron) {
+          const scheduleType = String(s?.type || 'unknown');
+          if (scheduleType === 'once') {
+            pushToast(
+              `节点 ${n.id} 的定时 #${i + 1}: V3 暂不支持一次性定时（once），已跳过`,
+              'warn',
+            );
+          } else {
+            pushToast(
+              `节点 ${n.id} 的定时 #${i + 1}: 无法转换为 cron（type=${scheduleType}），已跳过`,
+              'warn',
+            );
+          }
+          return;
+        }
+
+        triggersNeeded.push({
+          id: schId(flowId, n.id, i),
+          kind: 'cron',
+          enabled: enabled && s?.enabled !== false,
+          flowId: flowId as FlowId,
+          cron,
         });
       });
     }
   }
-  // sync triggers
+
+  // Sync triggers via V3 RPC
   try {
-    const list =
-      (await chrome.runtime.sendMessage({ type: BACKGROUND_MESSAGE_TYPES.RR_LIST_TRIGGERS })) || {};
-    const existing: any[] = list.triggers || [];
-    const mine = existing.filter((x) => String(x.flowId) === String(flowId));
-    const needIds = new Set(triggersNeeded.map((t) => t.id));
-    // save or update
-    for (const t of triggersNeeded) {
-      await chrome.runtime.sendMessage({
-        type: BACKGROUND_MESSAGE_TYPES.RR_SAVE_TRIGGER,
-        trigger: t,
-      });
-    }
-    // delete stale
-    for (const t of mine) {
-      if (!needIds.has(t.id)) {
-        await chrome.runtime.sendMessage({
-          type: BACKGROUND_MESSAGE_TYPES.RR_DELETE_TRIGGER,
-          id: t.id,
-        });
+    await rpc.ensureConnected();
+
+    // Get existing triggers for this flow
+    const existing = (await rpc.request('rr_v3.listTriggers', {
+      flowId: flowId as FlowId,
+    })) as TriggerSpec[] | null;
+
+    const existingById = new Map((existing || []).map((t) => [t.id, t]));
+    const neededIds = new Set(triggersNeeded.map((t) => t.id));
+
+    // Create or update triggers
+    for (const trigger of triggersNeeded) {
+      // Cast TriggerSpec to JsonObject for RPC compatibility
+      const triggerPayload = trigger as unknown as JsonObject;
+      if (existingById.has(trigger.id)) {
+        await rpc.request('rr_v3.updateTrigger', { trigger: triggerPayload });
+      } else {
+        await rpc.request('rr_v3.createTrigger', { trigger: triggerPayload });
       }
     }
-    await chrome.runtime.sendMessage({ type: BACKGROUND_MESSAGE_TYPES.RR_REFRESH_TRIGGERS });
-  } catch {}
-  // sync schedules
-  try {
-    const list =
-      (await chrome.runtime.sendMessage({ type: BACKGROUND_MESSAGE_TYPES.RR_LIST_SCHEDULES })) ||
-      {};
-    const existing: any[] = list.schedules || [];
-    const mine = existing.filter((x) => String(x.flowId) === String(flowId));
-    const needIds = new Set(schedulesNeeded.map((s) => s.id));
-    for (const s of schedulesNeeded) {
-      await chrome.runtime.sendMessage({
-        type: BACKGROUND_MESSAGE_TYPES.RR_SCHEDULE_FLOW,
-        schedule: s,
-      });
-    }
-    for (const s of mine) {
-      if (!needIds.has(s.id)) {
-        await chrome.runtime.sendMessage({
-          type: BACKGROUND_MESSAGE_TYPES.RR_UNSCHEDULE_FLOW,
-          scheduleId: s.id,
-        });
+
+    // Delete stale triggers (only node-managed triggers, not panel-created ones like interval/once)
+    // Node-managed trigger IDs have prefixes: trg_{flowId}_ or sch_{flowId}_
+    const nodeManagedPrefixes = [`trg_${flowId}_`, `sch_${flowId}_`];
+    const isNodeManaged = (triggerId: string) =>
+      nodeManagedPrefixes.some((prefix) => triggerId.startsWith(prefix));
+
+    for (const existing of existingById.values()) {
+      if (!neededIds.has(existing.id) && isNodeManaged(existing.id)) {
+        await rpc.request('rr_v3.deleteTrigger', { triggerId: existing.id });
       }
     }
-  } catch {}
+  } catch (e) {
+    // Best-effort sync - log for debugging but don't block user
+    console.warn('[Builder] Trigger sync failed:', e);
+  }
 }
 
 async function exportFlow() {
   try {
-    await save();
-    const res = await chrome.runtime.sendMessage({
-      type: BACKGROUND_MESSAGE_TYPES.RR_EXPORT_FLOW,
-      flowId: store.flowLocal.id,
-    });
-    if (res && res.success) {
-      const blob = new Blob([res.json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      await chrome.downloads.download({
-        url,
-        filename: `${store.flowLocal.name || 'flow'}.json`,
-        saveAs: true,
-      } as any);
-      URL.revokeObjectURL(url);
-    }
-  } catch {}
+    // Save first to ensure latest changes are persisted
+    const saved = await save();
+    if (!saved) return;
+
+    // Export the V3 flow directly (no need for separate RPC call)
+    const blob = new Blob([JSON.stringify(saved, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    await chrome.downloads.download({
+      url,
+      filename: `${store.flowLocal.name || 'flow'}.json`,
+      saveAs: true,
+    } as chrome.downloads.DownloadOptions);
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    pushToast(`导出失败：${e instanceof Error ? e.message : String(e)}`, 'error');
+  }
 }
 
 async function onImport(e: Event) {
   const input = e.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
+
   try {
     const txt = await file.text();
-    const res = await chrome.runtime.sendMessage({
-      type: BACKGROUND_MESSAGE_TYPES.RR_IMPORT_FLOW,
-      json: txt,
-    });
-    if (res && res.success && Array.isArray(res.flows) && res.flows.length) {
-      store.initFromFlow(res.flows[0]);
+    const parsed = JSON.parse(txt);
+    const candidates = extractFlowCandidates(parsed);
+
+    if (!candidates.length) {
+      pushToast('导入失败：未找到工作流数据', 'error');
+      return;
     }
-  } catch {
+
+    const first = candidates[0];
+
+    if (isFlowV3(first)) {
+      // V3 format: save via RPC, then load into builder
+      await rpc.ensureConnected();
+      const saved = (await rpc.request('rr_v3.saveFlow', {
+        flow: first as unknown as JsonObject,
+      })) as unknown as FlowV3;
+
+      const { flow: flowV2, warnings } = flowV3ToV2ForBuilder(saved);
+      warnings.forEach((w) => pushToast(w, 'warn'));
+      store.initFromFlow(flowV2);
+      title.value = `编辑：${flowV2.name || flowV2.id}`;
+
+      // Sync triggers
+      try {
+        await syncTriggersAndSchedules(flowV2.id, flowV2.nodes || []);
+      } catch {}
+    } else {
+      // V2 format: load directly, then save to convert to V3
+      store.initFromFlow(first as FlowV2);
+
+      // If V2 flow has steps but no nodes, trigger conversion
+      if (
+        Array.isArray((first as any)?.steps) &&
+        (!Array.isArray((first as any)?.nodes) || (first as any).nodes.length === 0)
+      ) {
+        store.importFromSteps();
+      }
+
+      title.value = `编辑：${store.flowLocal.name || store.flowLocal.id}`;
+      await save(); // Convert and save as V3
+    }
+  } catch (e) {
+    pushToast(`导入失败：${e instanceof Error ? e.message : String(e)}`, 'error');
   } finally {
     input.value = '';
   }
@@ -580,25 +771,38 @@ async function onImport(e: Event) {
 
 async function runFromSelected() {
   if (!selectedId.value || !store.flowLocal?.id) return;
+
   try {
-    await save();
-    await chrome.runtime.sendMessage({
-      type: BACKGROUND_MESSAGE_TYPES.RR_RUN_FLOW,
-      flowId: store.flowLocal.id,
-      options: { returnLogs: false, startNodeId: selectedId.value },
+    const saved = await save();
+    if (!saved) return;
+
+    await rpc.ensureConnected();
+
+    // Skip trigger nodes (they can't be start nodes)
+    const node = store.nodes.find((n) => n.id === selectedId.value) || null;
+    const startNodeId = node?.type === 'trigger' ? undefined : selectedId.value;
+
+    await rpc.request('rr_v3.enqueueRun', {
+      flowId: saved.id as FlowId,
+      ...(startNodeId ? { startNodeId: startNodeId as NodeId } : {}),
     });
-  } catch {}
+  } catch (e) {
+    pushToast(`运行失败：${e instanceof Error ? e.message : String(e)}`, 'error');
+  }
 }
+
 async function runAll() {
   if (!store.flowLocal?.id) return;
+
   try {
-    await save();
-    await chrome.runtime.sendMessage({
-      type: BACKGROUND_MESSAGE_TYPES.RR_RUN_FLOW,
-      flowId: store.flowLocal.id,
-      options: { returnLogs: false },
-    });
-  } catch {}
+    const saved = await save();
+    if (!saved) return;
+
+    await rpc.ensureConnected();
+    await rpc.request('rr_v3.enqueueRun', { flowId: saved.id as FlowId });
+  } catch (e) {
+    pushToast(`运行失败：${e instanceof Error ? e.message : String(e)}`, 'error');
+  }
 }
 
 // Hotkeys
@@ -647,15 +851,20 @@ const saveState = ref<'idle' | 'saving' | 'saved'>('idle');
 const saveLabel = computed(() =>
   saveState.value === 'saving' ? '保存中…' : saveState.value === 'saved' ? '已保存' : '',
 );
-let saveTimer: any = null;
-let statusTimer: any = null;
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let statusTimer: ReturnType<typeof setTimeout> | null = null;
+
 function scheduleAutoSave() {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
     try {
       saveState.value = 'saving';
       await new Promise((r) => setTimeout(r, 0));
-      save();
+      const saved = await save();
+      if (!saved) {
+        saveState.value = 'idle';
+        return;
+      }
       saveState.value = 'saved';
       if (statusTimer) clearTimeout(statusTimer);
       statusTimer = setTimeout(() => (saveState.value = 'idle'), 1200);
@@ -810,6 +1019,13 @@ function focusNode(id: string) {
   z-index: 10;
   pointer-events: auto;
 }
+.floating-trigger {
+  position: absolute;
+  right: 400px; /* offset from property panel */
+  top: 52px;
+  z-index: 10;
+  pointer-events: auto;
+}
 .bottom-toolbar {
   position: absolute;
   left: 50%;
@@ -877,6 +1093,11 @@ function focusNode(id: string) {
 .top-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+.top-btn.active {
+  background: var(--rr-accent);
+  color: #fff;
+  border-color: var(--rr-accent);
 }
 .top-btn.primary {
   background: var(--rr-accent);

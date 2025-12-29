@@ -30,7 +30,7 @@
 
         <!-- New Session Button -->
         <button
-          class="flex-shrink-0 px-3 py-2 text-sm font-medium"
+          class="flex-shrink-0 px-3 py-2 text-sm font-medium cursor-pointer"
           :style="newButtonStyle"
           :disabled="isCreating"
           @click="handleNewSession"
@@ -94,7 +94,7 @@
         </div>
         <button
           v-if="!searchQuery"
-          class="px-4 py-2 text-sm font-medium"
+          class="px-4 py-2 text-sm font-medium cursor-pointer"
           :style="newButtonStyle"
           @click="handleNewSession"
         >

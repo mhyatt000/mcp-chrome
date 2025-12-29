@@ -458,8 +458,9 @@ export function useAgentSessions(options: UseAgentSessionsOptions) {
   }
 
   /**
-   * Update session preview locally (without server call).
-   * Used when sending the first message to update the display immediately.
+   * Update session preview and updatedAt locally (without server call).
+   * Used when sending a message to update the display immediately.
+   * Always updates updatedAt so the session moves to the top of the list.
    * @param sessionId - The session to update
    * @param preview - The preview text (user's raw input)
    * @param previewMeta - Optional structured metadata for special rendering (e.g., web editor apply chip)
@@ -474,23 +475,30 @@ export function useAgentSessions(options: UseAgentSessionsOptions) {
     const trimmed = preview.trim().replace(/\s+/g, ' ');
     const truncated = trimmed.length > maxLen ? trimmed.slice(0, maxLen - 1) + '…' : trimmed;
 
+    // Always update updatedAt to move session to top of list
+    const now = new Date().toISOString();
+
     // Update in current project sessions
     const index = sessions.value.findIndex((s) => s.id === sessionId);
-    if (index !== -1 && !sessions.value[index].preview) {
+    if (index !== -1) {
       sessions.value[index] = {
         ...sessions.value[index],
-        preview: truncated,
-        previewMeta,
+        // Only update preview if not already set
+        preview: sessions.value[index].preview || truncated,
+        previewMeta: sessions.value[index].previewMeta || previewMeta,
+        // Always update timestamp so session moves to top
+        updatedAt: now,
       };
     }
 
     // Also update in allSessions for global list view
     const allIndex = allSessions.value.findIndex((s) => s.id === sessionId);
-    if (allIndex !== -1 && !allSessions.value[allIndex].preview) {
+    if (allIndex !== -1) {
       allSessions.value[allIndex] = {
         ...allSessions.value[allIndex],
-        preview: truncated,
-        previewMeta,
+        preview: allSessions.value[allIndex].preview || truncated,
+        previewMeta: allSessions.value[allIndex].previewMeta || previewMeta,
+        updatedAt: now,
       };
     }
   }

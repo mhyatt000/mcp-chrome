@@ -58,6 +58,9 @@ export const BACKGROUND_MESSAGE_TYPES = {
   ELEMENT_MARKER_DELETE: 'element_marker_delete',
   ELEMENT_MARKER_VALIDATE: 'element_marker_validate',
   ELEMENT_MARKER_START: 'element_marker_start_from_popup',
+  // Element picker (human-in-the-loop element selection)
+  ELEMENT_PICKER_UI_EVENT: 'element_picker_ui_event',
+  ELEMENT_PICKER_FRAME_EVENT: 'element_picker_frame_event',
   // Web editor (in-page visual editing)
   WEB_EDITOR_TOGGLE: 'web_editor_toggle',
   WEB_EDITOR_APPLY: 'web_editor_apply',
@@ -76,6 +79,8 @@ export const BACKGROUND_MESSAGE_TYPES = {
   WEB_EDITOR_CANCEL_EXECUTION: 'web_editor_cancel_execution',
   // Web editor props (Phase 7.1.6 early injection)
   WEB_EDITOR_PROPS_REGISTER_EARLY_INJECTION: 'web_editor_props_register_early_injection',
+  // Web editor props - open source file in VSCode
+  WEB_EDITOR_OPEN_SOURCE: 'web_editor_open_source',
   // Quick Panel <-> AgentChat integration
   QUICK_PANEL_SEND_TO_AI: 'quick_panel_send_to_ai',
   QUICK_PANEL_CANCEL_AI: 'quick_panel_cancel_ai',
@@ -163,6 +168,14 @@ export const TOOL_MESSAGE_TYPES = {
   COLLECT_VARIABLES: 'collectVariables',
   // Element marker overlay control (content-side)
   ELEMENT_MARKER_START: 'element_marker_start',
+  // Element picker (tool-driven, background <-> content scripts)
+  ELEMENT_PICKER_START: 'elementPickerStart',
+  ELEMENT_PICKER_STOP: 'elementPickerStop',
+  ELEMENT_PICKER_SET_ACTIVE_REQUEST: 'elementPickerSetActiveRequest',
+  ELEMENT_PICKER_UI_PING: 'elementPickerUiPing',
+  ELEMENT_PICKER_UI_SHOW: 'elementPickerUiShow',
+  ELEMENT_PICKER_UI_UPDATE: 'elementPickerUiUpdate',
+  ELEMENT_PICKER_UI_HIDE: 'elementPickerUiHide',
 } as const;
 
 // Type unions for type safety

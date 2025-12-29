@@ -17,17 +17,10 @@ import { createQuickPanelController, type QuickPanelController } from '@/shared/
 
 export default defineContentScript({
   matches: ['<all_urls>'],
-  // Exclude extension pages and browser internal pages
-  excludeMatches: [
-    'chrome://*',
-    'chrome-extension://*',
-    'edge://*',
-    'about:*',
-    'moz-extension://*',
-  ],
   runAt: 'document_idle',
 
   main() {
+    console.log('[QuickPanelContentScript] Content script loaded on:', window.location.href);
     let controller: QuickPanelController | null = null;
 
     /**
@@ -55,10 +48,13 @@ export default defineContentScript({
       const msg = message as { action?: string } | undefined;
 
       if (msg?.action === 'toggle_quick_panel') {
+        console.log('[QuickPanelContentScript] Received toggle_quick_panel message');
         try {
           const ctrl = ensureController();
           ctrl.toggle();
-          sendResponse({ success: true, visible: ctrl.isVisible() });
+          const visible = ctrl.isVisible();
+          console.log('[QuickPanelContentScript] Toggle completed, visible:', visible);
+          sendResponse({ success: true, visible });
         } catch (err) {
           console.error('[QuickPanelContentScript] Toggle error:', err);
           sendResponse({ success: false, error: String(err) });

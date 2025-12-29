@@ -195,6 +195,7 @@ export class RpcServer {
       },
       {
         flowId: params?.flowId as FlowId,
+        startNodeId: params?.startNodeId as NodeId | undefined,
         priority: params?.priority as number | undefined,
         maxAttempts: params?.maxAttempts as number | undefined,
         args: params?.args as JsonObject | undefined,
@@ -982,6 +983,29 @@ export class RpcServer {
         return { ...base, cron: raw.cron, timezone } as TriggerSpec;
       }
 
+      case 'interval': {
+        if (raw.periodMinutes === undefined || raw.periodMinutes === null) {
+          throw new Error('trigger.periodMinutes is required for interval triggers');
+        }
+        if (typeof raw.periodMinutes !== 'number' || !Number.isFinite(raw.periodMinutes)) {
+          throw new Error('trigger.periodMinutes must be a finite number');
+        }
+        if (raw.periodMinutes < 1) {
+          throw new Error('trigger.periodMinutes must be >= 1');
+        }
+        return { ...base, periodMinutes: raw.periodMinutes } as TriggerSpec;
+      }
+
+      case 'once': {
+        if (raw.whenMs === undefined || raw.whenMs === null) {
+          throw new Error('trigger.whenMs is required for once triggers');
+        }
+        if (typeof raw.whenMs !== 'number' || !Number.isFinite(raw.whenMs)) {
+          throw new Error('trigger.whenMs must be a finite number');
+        }
+        return { ...base, whenMs: Math.floor(raw.whenMs) } as TriggerSpec;
+      }
+
       case 'command': {
         if (!raw.commandKey || typeof raw.commandKey !== 'string') {
           throw new Error('trigger.commandKey is required for command triggers');
@@ -1033,7 +1057,7 @@ export class RpcServer {
 
       default:
         throw new Error(
-          `trigger.kind must be one of: manual, url, cron, command, contextMenu, dom`,
+          `trigger.kind must be one of: manual, url, cron, interval, once, command, contextMenu, dom`,
         );
     }
   }

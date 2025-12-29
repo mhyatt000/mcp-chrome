@@ -84,16 +84,16 @@ export default defineConfig({
       //   suggested_key: { default: 'Ctrl+Shift+3' },
       //   description: 'Run quick trigger 3',
       // },
-      open_workflow_sidepanel: {
-        suggested_key: { default: 'Ctrl+Shift+O' },
-        description: 'Open workflow sidepanel',
-      },
+      // open_workflow_sidepanel: {
+      //   suggested_key: { default: 'Ctrl+Shift+O' },
+      //   description: 'Open workflow sidepanel',
+      // },
       toggle_web_editor: {
-        suggested_key: { default: 'Ctrl+Shift+E', mac: 'Command+Shift+E' },
+        suggested_key: { default: 'Ctrl+Shift+O', mac: 'Command+Shift+O' },
         description: 'Toggle Web Editor mode',
       },
       toggle_quick_panel: {
-        suggested_key: { default: 'Ctrl+Shift+K', mac: 'Command+Shift+K' },
+        suggested_key: { default: 'Ctrl+Shift+U', mac: 'Command+Shift+U' },
         description: 'Toggle Quick Panel AI Chat',
       },
     },

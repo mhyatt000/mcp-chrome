@@ -3,16 +3,15 @@
  *
  * Renders AgentChat-compatible messages for the Quick Panel AI Chat UI.
  * Features:
- * - XSS-safe rendering (textContent only, no innerHTML)
+ * - Markdown rendering for assistant messages via markstream-vue
+ * - XSS-safe rendering for user messages (textContent only)
  * - Streaming message support (in-place updates via message id)
  * - Auto-scroll with proximity detection
  * - Memory-efficient DOM recycling
- *
- * Note: This renderer is framework-agnostic and directly manipulates DOM
- * for optimal performance in content script context.
  */
 
 import type { AgentMessage, AgentRole } from 'chrome-mcp-shared';
+import { createMarkdownRenderer, type MarkdownRendererInstance } from './markdown-renderer';
 
 // ============================================================
 // Types
@@ -61,6 +60,8 @@ interface MessageEntry {
   timeEl: HTMLSpanElement;
   metaRightEl: HTMLSpanElement;
   requestIdEl: HTMLElement;
+  /** Markdown renderer for assistant messages */
+  markdownRenderer: MarkdownRendererInstance | null;
 }
 
 // ============================================================
@@ -187,6 +188,12 @@ function createMessageEntry(messageId: string, message: AgentMessage): MessageEn
   bubble.append(textEl, metaEl);
   wrapper.append(bubble);
 
+  // Create markdown renderer for assistant messages
+  let markdownRenderer: MarkdownRendererInstance | null = null;
+  if (message.role === 'assistant') {
+    markdownRenderer = createMarkdownRenderer(textEl);
+  }
+
   return {
     wrapper,
     bubble,
@@ -197,6 +204,7 @@ function createMessageEntry(messageId: string, message: AgentMessage): MessageEn
     timeEl: metaLeft.time,
     metaRightEl: metaRight.container,
     requestIdEl: metaRight.requestId,
+    markdownRenderer,
   };
 }
 
@@ -221,10 +229,17 @@ function updateMessageEntry(entry: MessageEntry, messageId: string, message: Age
     entry.bubble.className = bubbleClass;
   }
 
-  // Update text content (XSS-safe)
+  // Update content based on message role
   const textContent = message.content ?? '';
-  if (entry.textEl.textContent !== textContent) {
-    entry.textEl.textContent = textContent;
+
+  if (message.role === 'assistant' && entry.markdownRenderer) {
+    // Use markdown renderer for assistant messages
+    entry.markdownRenderer.setContent(textContent, isStreamingMessage(message));
+  } else {
+    // Use plain text for user messages (XSS-safe)
+    if (entry.textEl.textContent !== textContent) {
+      entry.textEl.textContent = textContent;
+    }
   }
 
   // Update time display
@@ -343,6 +358,11 @@ export function createQuickPanelMessageRenderer(
 
     entries.delete(id);
 
+    // Dispose markdown renderer if exists
+    if (entry.markdownRenderer) {
+      entry.markdownRenderer.dispose();
+    }
+
     try {
       entry.wrapper.remove();
     } catch {
@@ -354,12 +374,26 @@ export function createQuickPanelMessageRenderer(
   function clear(): void {
     if (disposed) return;
 
+    // Dispose all markdown renderers
+    for (const entry of entries.values()) {
+      if (entry.markdownRenderer) {
+        entry.markdownRenderer.dispose();
+      }
+    }
+
     entries.clear();
     container.textContent = '';
   }
 
   function setMessages(messages: AgentMessage[]): void {
     if (disposed) return;
+
+    // Dispose all existing markdown renderers
+    for (const entry of entries.values()) {
+      if (entry.markdownRenderer) {
+        entry.markdownRenderer.dispose();
+      }
+    }
 
     // Clear existing state
     entries.clear();
@@ -387,6 +421,13 @@ export function createQuickPanelMessageRenderer(
   function dispose(): void {
     if (disposed) return;
     disposed = true;
+
+    // Dispose all markdown renderers
+    for (const entry of entries.values()) {
+      if (entry.markdownRenderer) {
+        entry.markdownRenderer.dispose();
+      }
+    }
 
     entries.clear();
     container.textContent = '';

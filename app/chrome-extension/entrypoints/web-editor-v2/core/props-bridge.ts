@@ -12,7 +12,7 @@
  * @module props-bridge
  */
 
-import type { ElementLocator } from '@/common/web-editor-types';
+import type { DebugSource, ElementLocator } from '@/common/web-editor-types';
 
 // =============================================================================
 // Types - Hook Status
@@ -223,7 +223,11 @@ export interface PropsResponseData {
   hookStatus?: HookStatus;
   needsRefresh?: boolean;
   framework?: FrameworkType;
+  /** Framework version (e.g., "18.2.0" for React, "3.4.21" for Vue) */
+  frameworkVersion?: string;
   componentName?: string;
+  /** Source file location for the component (React _debugSource / Vue data-v-inspector) */
+  debugSource?: DebugSource;
   props?: SerializedProps;
   capabilities?: PropsCapabilities;
   meta?: Record<string, unknown>;

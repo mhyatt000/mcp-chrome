@@ -145,11 +145,13 @@ export function convertFlowV2ToV3(v2Flow: V2Flow): ConversionResult<FlowV3> {
   }
 
   // 5. 计算 entryNodeId
-  const entryNodeId = findEntryNodeId(nodes, edges);
-  if (!entryNodeId) {
+  const entryResult = findEntryNodeId(nodes, edges);
+  warnings.push(...entryResult.warnings);
+  if (!entryResult.nodeId) {
     errors.push('Could not determine entry node. No valid root node found.');
     return { success: false, errors, warnings };
   }
+  const entryNodeId = entryResult.nodeId;
 
   // 6. 转换变量
   const variables = convertVariablesV2ToV3(v2Flow.variables || []);
@@ -234,41 +236,118 @@ function convertEdgeV2ToV3(v2Edge: V2Edge): EdgeV3 | null {
   return edge;
 }
 
+/** entryNodeId 计算结果 */
+interface EntryNodeResult {
+  nodeId: NodeId | null;
+  warnings: string[];
+}
+
 /**
  * 找到入口节点 ID
+ *
  * 规则：
- * 1. 排除 trigger 类型节点（这些是 UI 节点）
- * 2. 找到入度为 0 的节点（没有边指向它）
- * 3. 如果有多个，选择第一个（按 ID 排序）
+ * 1. 排除 trigger 类型节点（这些是 UI 节点，不参与执行）
+ * 2. 只统计「可执行节点 -> 可执行节点」的边来计算入度（忽略 trigger 指出的边）
+ * 3. 找到入度为 0 的节点作为候选
+ * 4. 如果有多个候选，使用稳定选择规则：
+ *    - 优先选择 UI 坐标最靠左上的节点（按 x 升序，x 相同按 y 升序）
+ *    - 如果无 UI 坐标，按 ID 字典序取第一个
  */
-function findEntryNodeId(nodes: NodeV3[], edges: EdgeV3[]): NodeId | null {
-  // 排除 trigger 节点
+function findEntryNodeId(nodes: NodeV3[], edges: EdgeV3[]): EntryNodeResult {
+  const warnings: string[] = [];
+
+  // 1. 排除 trigger 节点，获取可执行节点
   const executableNodes = nodes.filter((n) => n.kind !== 'trigger');
   if (executableNodes.length === 0) {
-    return null;
+    warnings.push('No executable nodes found; cannot determine entry node');
+    return { nodeId: null, warnings };
   }
 
-  // 计算每个节点的入度
-  const inDegree = new Map<string, number>();
+  const executableNodeIds = new Set<NodeId>(executableNodes.map((n) => n.id));
+
+  // 2. 计算入度（只统计可执行节点之间的边）
+  const inDegree = new Map<NodeId, number>();
   for (const node of executableNodes) {
     inDegree.set(node.id, 0);
   }
   for (const edge of edges) {
-    if (inDegree.has(edge.to)) {
-      inDegree.set(edge.to, (inDegree.get(edge.to) || 0) + 1);
+    // 忽略从非可执行节点（如 trigger）指出的边
+    if (!executableNodeIds.has(edge.from)) {
+      continue;
     }
+    // 忽略指向非可执行节点的边
+    if (!executableNodeIds.has(edge.to)) {
+      continue;
+    }
+    inDegree.set(edge.to, (inDegree.get(edge.to) ?? 0) + 1);
   }
 
-  // 找入度为 0 的节点
+  // 3. 找入度为 0 的节点
   const rootNodes = executableNodes.filter((n) => inDegree.get(n.id) === 0);
+
   if (rootNodes.length === 0) {
-    // 如果没有入度为 0 的节点，说明可能有环，取第一个可执行节点
-    return executableNodes[0].id;
+    // 没有入度为 0 的节点，说明图中存在环，使用稳定选择器选择 fallback
+    const fallbackResult = selectStableRootNode(executableNodes);
+    warnings.push(
+      `No inDegree=0 executable node found (graph may contain cycles); ` +
+        `falling back to "${fallbackResult.node.id}" by ${fallbackResult.rule}`,
+    );
+    return { nodeId: fallbackResult.node.id, warnings };
   }
 
-  // 按 ID 排序，取第一个
-  rootNodes.sort((a, b) => a.id.localeCompare(b.id));
-  return rootNodes[0].id;
+  // 4. 单个根节点，直接返回
+  if (rootNodes.length === 1) {
+    return { nodeId: rootNodes[0].id, warnings };
+  }
+
+  // 5. 多个根节点，使用稳定选择规则
+  const selectedResult = selectStableRootNode(rootNodes);
+  const candidateIds = rootNodes
+    .map((n) => n.id)
+    .sort((a, b) => a.localeCompare(b))
+    .join(', ');
+  warnings.push(
+    `Multiple inDegree=0 executable nodes (${candidateIds}); ` +
+      `selected "${selectedResult.node.id}" by ${selectedResult.rule}`,
+  );
+
+  return { nodeId: selectedResult.node.id, warnings };
+}
+
+/** 稳定选择结果 */
+interface StableSelectionResult {
+  node: NodeV3;
+  rule: string;
+}
+
+/**
+ * 从多个根节点中选择一个稳定的入口节点
+ * 优先按 UI 坐标（左上角优先），其次按 ID 字典序
+ */
+function selectStableRootNode(nodes: NodeV3[]): StableSelectionResult {
+  // 检查节点是否有有效的 UI 坐标
+  const hasValidUi = (n: NodeV3): n is NodeV3 & { ui: { x: number; y: number } } =>
+    !!n.ui && Number.isFinite(n.ui.x) && Number.isFinite(n.ui.y);
+
+  const nodesWithUi = nodes.filter(hasValidUi);
+
+  if (nodesWithUi.length > 0) {
+    // 按 UI 坐标排序：x 升序 -> y 升序 -> id 字典序（作为 tie-breaker）
+    nodesWithUi.sort((a, b) => {
+      if (a.ui.x !== b.ui.x) return a.ui.x - b.ui.x;
+      if (a.ui.y !== b.ui.y) return a.ui.y - b.ui.y;
+      return a.id.localeCompare(b.id);
+    });
+    const selected = nodesWithUi[0];
+    return {
+      node: selected,
+      rule: `ui(x=${selected.ui.x}, y=${selected.ui.y})`,
+    };
+  }
+
+  // 无 UI 坐标，按 ID 字典序
+  const sortedById = [...nodes].sort((a, b) => a.id.localeCompare(b.id));
+  return { node: sortedById[0], rule: 'id' };
 }
 
 /**
@@ -475,8 +554,7 @@ export function convertTriggerV2ToV3(v2Trigger: V2Trigger): ConversionResult<Tri
       };
       break;
 
-    case 'schedule': // 将 V2 schedule 转换为 cron 表达式
-    {
+    case 'schedule': { // 将 V2 schedule 转换为 cron 表达式
       const cron = convertScheduleToCron(v2Trigger.schedule);
       if (!cron) {
         errors.push('Could not convert V2 schedule to cron expression');
@@ -517,8 +595,7 @@ function convertScheduleToCron(schedule: V2Trigger['schedule']): string | null {
   if (!schedule) return null;
 
   switch (schedule.type) {
-    case 'interval': // 将间隔转换为近似 cron（每 N 分钟）
-    {
+    case 'interval': { // 将间隔转换为近似 cron（每 N 分钟）
       const intervalMinutes = Math.max(1, Math.round((schedule.intervalMs || 60000) / 60000));
       if (intervalMinutes < 60) {
         return `*/${intervalMinutes} * * * *`;
@@ -536,8 +613,7 @@ function convertScheduleToCron(schedule: V2Trigger['schedule']): string | null {
       }
       return '0 0 * * *'; // 默认每天 0:00
 
-    case 'weekly': // 每周指定天数和时间
-    {
+    case 'weekly': { // 每周指定天数和时间
       const days = (schedule.days || [0]).join(',');
       if (schedule.time) {
         const [hour, minute] = schedule.time.split(':').map(Number);

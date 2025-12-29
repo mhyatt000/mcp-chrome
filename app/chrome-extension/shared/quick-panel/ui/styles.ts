@@ -176,14 +176,14 @@ export const QUICK_PANEL_STYLES = /* css */ `
     --ac-hover-bg: rgba(255, 255, 255, 0.06);
     --ac-hover-bg-subtle: rgba(255, 255, 255, 0.04);
 
-    --ac-accent: #c084fc;
-    --ac-accent-hover: #d8b4fe;
-    --ac-accent-subtle: rgba(192, 132, 252, 0.14);
-    --ac-accent-contrast: #0a0c10;
+    --ac-accent: #d97757;
+    --ac-accent-hover: #e8956f;
+    --ac-accent-subtle: rgba(217, 119, 87, 0.18);
+    --ac-accent-contrast: #ffffff;
 
-    --ac-focus-ring: rgba(192, 132, 252, 0.35);
+    --ac-focus-ring: rgba(217, 119, 87, 0.4);
     --ac-timeline-node-pulse-shadow:
-      0 0 0 2px rgba(192, 132, 252, 0.35), 0 0 14px rgba(192, 132, 252, 0.25);
+      0 0 0 2px rgba(217, 119, 87, 0.35), 0 0 14px rgba(217, 119, 87, 0.25);
 
     --ac-scrollbar-thumb: rgba(255, 255, 255, 0.12);
     --ac-scrollbar-thumb-hover: rgba(255, 255, 255, 0.22);
@@ -868,5 +868,129 @@ export const QUICK_PANEL_STYLES = /* css */ `
     display: inline-flex;
     align-items: center;
     gap: 6px;
+  }
+
+  /* ============================================================
+   * Markdown Content Styles (for markstream-vue)
+   * ============================================================ */
+
+  .qp-markdown-content {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--ac-text);
+  }
+
+  .qp-markdown-content pre {
+    background-color: var(--ac-surface-muted);
+    border: var(--ac-border-width) solid var(--ac-border);
+    border-radius: var(--ac-radius-inner);
+    padding: 12px;
+    overflow-x: auto;
+    margin: 0.5em 0;
+  }
+
+  .qp-markdown-content code {
+    font-family: var(--ac-font-code);
+    font-size: 0.875em;
+    color: var(--ac-text);
+  }
+
+  .qp-markdown-content :not(pre) > code {
+    background-color: var(--ac-surface-muted);
+    padding: 0.125em 0.25em;
+    border-radius: 4px;
+  }
+
+  .qp-markdown-content p {
+    margin: 0.5em 0;
+  }
+
+  .qp-markdown-content p:first-child {
+    margin-top: 0;
+  }
+
+  .qp-markdown-content p:last-child {
+    margin-bottom: 0;
+  }
+
+  .qp-markdown-content ul,
+  .qp-markdown-content ol {
+    margin: 0.5em 0;
+    padding-left: 1.5em;
+  }
+
+  .qp-markdown-content li {
+    margin: 0.25em 0;
+  }
+
+  .qp-markdown-content h1,
+  .qp-markdown-content h2,
+  .qp-markdown-content h3,
+  .qp-markdown-content h4,
+  .qp-markdown-content h5,
+  .qp-markdown-content h6 {
+    margin: 0.75em 0 0.5em;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  .qp-markdown-content h1 { font-size: 1.5em; }
+  .qp-markdown-content h2 { font-size: 1.3em; }
+  .qp-markdown-content h3 { font-size: 1.15em; }
+  .qp-markdown-content h4 { font-size: 1em; }
+
+  .qp-markdown-content blockquote {
+    border-left: 3px solid var(--ac-border-strong);
+    padding-left: 1em;
+    margin: 0.5em 0;
+    color: var(--ac-text-muted);
+  }
+
+  .qp-markdown-content a {
+    color: var(--ac-link);
+    text-decoration: underline;
+  }
+
+  .qp-markdown-content a:hover {
+    color: var(--ac-link-hover);
+  }
+
+  .qp-markdown-content table {
+    border-collapse: collapse;
+    margin: 0.5em 0;
+    width: 100%;
+    font-size: 0.9em;
+  }
+
+  .qp-markdown-content th,
+  .qp-markdown-content td {
+    border: var(--ac-border-width) solid var(--ac-border);
+    padding: 0.5em;
+    text-align: left;
+  }
+
+  .qp-markdown-content th {
+    background-color: var(--ac-surface-muted);
+    font-weight: 600;
+  }
+
+  .qp-markdown-content hr {
+    border: none;
+    border-top: var(--ac-border-width) solid var(--ac-border);
+    margin: 1em 0;
+  }
+
+  .qp-markdown-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--ac-radius-inner);
+  }
+
+  .qp-markdown-content strong {
+    font-weight: 600;
+  }
+
+  .qp-markdown-content em {
+    font-style: italic;
   }
 `;

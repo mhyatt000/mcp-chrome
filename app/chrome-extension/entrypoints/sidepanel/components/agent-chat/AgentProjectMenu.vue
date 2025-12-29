@@ -199,7 +199,7 @@
     <!-- Save Button -->
     <div class="px-3 py-2">
       <button
-        class="w-full px-3 py-1.5 text-xs rounded transition-colors hover:opacity-90"
+        class="w-full px-3 py-1.5 text-xs rounded transition-colors hover:opacity-90 cursor-pointer"
         :style="{
           backgroundColor: 'var(--ac-accent, #c87941)',
           color: 'var(--ac-accent-contrast, #ffffff)',

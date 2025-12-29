@@ -103,13 +103,18 @@ async function toggleQuickPanelInActiveTab(): Promise<void> {
  * Initialize Quick Panel keyboard command listener
  */
 export function initQuickPanelCommands(): void {
-  console.log('outside initQuickPanelCommands');
+  console.log(`${LOG_PREFIX} initQuickPanelCommands called`);
   chrome.commands.onCommand.addListener(async (command) => {
-    console.log('initQuickPanelCommands===>');
-    if (command !== COMMAND_KEY) return;
+    console.log(`${LOG_PREFIX} onCommand received:`, command);
+    if (command !== COMMAND_KEY) {
+      console.log(`${LOG_PREFIX} Command not matched, expected:`, COMMAND_KEY);
+      return;
+    }
+    console.log(`${LOG_PREFIX} Command matched, calling toggleQuickPanelInActiveTab...`);
 
     try {
       await toggleQuickPanelInActiveTab();
+      console.log(`${LOG_PREFIX} toggleQuickPanelInActiveTab completed`);
     } catch (err) {
       console.error(`${LOG_PREFIX} Command handler error:`, err);
     }

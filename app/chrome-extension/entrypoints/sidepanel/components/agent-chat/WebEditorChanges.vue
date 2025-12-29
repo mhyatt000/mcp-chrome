@@ -24,7 +24,7 @@
         >
           <button
             type="button"
-            class="px-2 py-0.5 text-[10px] transition-colors"
+            class="px-2 py-0.5 text-[10px] transition-colors cursor-pointer"
             :style="includeButtonStyle"
             :aria-pressed="viewMode === 'include'"
             @click="viewMode = 'include'"
@@ -33,7 +33,7 @@
           </button>
           <button
             type="button"
-            class="px-2 py-0.5 text-[10px] transition-colors"
+            class="px-2 py-0.5 text-[10px] transition-colors cursor-pointer"
             :style="excludeButtonStyle"
             :aria-pressed="viewMode === 'exclude'"
             @click="viewMode = 'exclude'"

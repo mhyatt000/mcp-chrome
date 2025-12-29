@@ -111,7 +111,7 @@
         </div>
         <button
           v-if="isDetailsTruncated"
-          class="w-full px-3 py-1 text-[10px] text-left"
+          class="w-full px-3 py-1 text-[10px] text-left cursor-pointer"
           :style="{
             backgroundColor: 'var(--ac-surface-muted)',
             color: 'var(--ac-link)',
@@ -135,7 +135,7 @@
         </div>
         <button
           v-if="isDetailsTruncated"
-          class="w-full px-3 py-1 text-[10px] text-left"
+          class="w-full px-3 py-1 text-[10px] text-left cursor-pointer"
           :style="{
             backgroundColor: 'var(--ac-surface-muted)',
             color: 'var(--ac-link)',

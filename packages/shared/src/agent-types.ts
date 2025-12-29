@@ -108,6 +108,16 @@ export interface AgentActRequest {
    * Optional request id from client; server will generate one if missing.
    */
   requestId?: string;
+  /**
+   * Optional client metadata to store with the user message.
+   * For extension-specific context that should be preserved.
+   */
+  clientMeta?: Record<string, unknown>;
+  /**
+   * Optional display text override for the instruction.
+   * When set, UI should display this instead of raw instruction.
+   */
+  displayText?: string;
 }
 
 export interface AgentActResponse {
@@ -140,6 +150,11 @@ export interface AgentProject {
    * When enabled, the engine will auto-detect CCR configuration.
    */
   useCcr?: boolean;
+  /**
+   * Whether to enable Chrome MCP integration for this project.
+   * Default: true
+   */
+  enableChromeMcp?: boolean;
   createdAt: string;
   updatedAt: string;
   lastActiveAt?: string;
@@ -344,3 +359,119 @@ export const DEFAULT_CODEX_CONFIG: CodexEngineConfig = {
   autoInstructions: CODEX_AUTO_INSTRUCTIONS,
   appendProjectContext: true,
 };
+
+// ============================================================
+// Attachment Types
+// ============================================================
+
+/**
+ * Metadata for a persisted attachment file.
+ */
+export interface AttachmentMetadata {
+  /** Schema version for forward compatibility */
+  version: number;
+  /** Kind of attachment (e.g., 'image', 'file') */
+  kind: string;
+  /** Project ID this attachment belongs to */
+  projectId: string;
+  /** Message ID this attachment is associated with */
+  messageId: string;
+  /** Index of this attachment in the message */
+  index: number;
+  /** Persisted filename under project dir */
+  filename: string;
+  /** URL path to access this attachment */
+  urlPath: string;
+  /** MIME type of the attachment */
+  mimeType: string;
+  /** File size in bytes */
+  sizeBytes: number;
+  /** Original filename from upload */
+  originalName: string;
+  /** Timestamp when attachment was created */
+  createdAt: string;
+}
+
+/**
+ * Statistics for attachments in a single project.
+ */
+export interface AttachmentProjectStats {
+  projectId: string;
+  /** Directory path for this project's attachments */
+  dirPath: string;
+  /** Whether the directory exists */
+  exists: boolean;
+  fileCount: number;
+  totalBytes: number;
+  /** Last modification timestamp (only when exists is true) */
+  lastModifiedAt?: string;
+}
+
+/**
+ * Cleanup result for a single project.
+ */
+export interface CleanupProjectResult {
+  projectId: string;
+  dirPath: string;
+  existed: boolean;
+  removedFiles: number;
+  removedBytes: number;
+}
+
+/**
+ * Response for attachment statistics endpoint.
+ */
+export interface AttachmentStatsResponse {
+  success: boolean;
+  rootDir: string;
+  totalFiles: number;
+  totalBytes: number;
+  projects: Array<
+    AttachmentProjectStats & {
+      projectName?: string;
+      existsInDb: boolean;
+    }
+  >;
+  orphanProjectIds: string[];
+}
+
+/**
+ * Request body for attachment cleanup endpoint.
+ */
+export interface AttachmentCleanupRequest {
+  /** If provided, cleanup only these projects. Otherwise cleanup all. */
+  projectIds?: string[];
+}
+
+/**
+ * Response for attachment cleanup endpoint.
+ */
+export interface AttachmentCleanupResponse {
+  success: boolean;
+  scope: 'project' | 'selected' | 'all';
+  removedFiles: number;
+  removedBytes: number;
+  results: CleanupProjectResult[];
+}
+
+// ============================================================
+// Open Project Types
+// ============================================================
+
+/**
+ * Target application for opening a project directory.
+ */
+export type OpenProjectTarget = 'vscode' | 'terminal';
+
+/**
+ * Request body for open-project endpoint.
+ */
+export interface OpenProjectRequest {
+  /** Target application to open the project in */
+  target: OpenProjectTarget;
+}
+
+/**
+ * Response for open-project endpoint.
+ */
+export type OpenProjectResponse = { success: true } | { success: false; error: string };

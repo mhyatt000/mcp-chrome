@@ -67,14 +67,41 @@ function isDangerousPropKey(key: string): boolean {
   return DANGEROUS_PROP_KEYS.has(String(key ?? '').trim());
 }
 
-function formatFramework(framework: FrameworkType | undefined): string {
-  if (framework === 'react') return 'React';
-  if (framework === 'vue') return 'Vue';
+function formatFramework(framework: FrameworkType | undefined, version?: string): string {
+  // Only show version for known frameworks to avoid "Unknown x.y.z" display
+  if (framework === 'react') {
+    const trimmedVersion = version?.trim();
+    return trimmedVersion ? `React ${trimmedVersion}` : 'React';
+  }
+  if (framework === 'vue') {
+    const trimmedVersion = version?.trim();
+    return trimmedVersion ? `Vue ${trimmedVersion}` : 'Vue';
+  }
   return 'Unknown';
 }
 
 function formatHookStatus(hookStatus: HookStatus | undefined): string {
   return hookStatus ? String(hookStatus) : '';
+}
+
+/**
+ * Format debug source for display.
+ * Returns empty string if source is invalid/missing.
+ */
+function formatDebugSource(source: unknown): string {
+  if (!source || typeof source !== 'object') return '';
+
+  const rec = source as Record<string, unknown>;
+  const file = typeof rec.file === 'string' ? rec.file.trim() : '';
+  if (!file) return '';
+
+  const lineRaw = Number(rec.line);
+  const columnRaw = Number(rec.column);
+  const line = Number.isFinite(lineRaw) && lineRaw > 0 ? lineRaw : undefined;
+  const column = Number.isFinite(columnRaw) && columnRaw > 0 ? columnRaw : undefined;
+
+  if (!line) return file;
+  return column ? `${file}:${line}:${column}` : `${file}:${line}`;
 }
 
 function formatSerializedValue(value: SerializedValue): string {
@@ -275,6 +302,39 @@ export function createPropsPanel(options: PropsPanelOptions): PropsPanel {
   const { container, propsBridge } = options;
   const disposer = new Disposer();
 
+  // ==========================================================================
+  // Tooltip - fixed position at shadow root level to avoid overflow clipping
+  // ==========================================================================
+
+  const tooltip = document.createElement('div');
+  tooltip.className = 'we-tooltip';
+  tooltip.hidden = true;
+
+  const rootNode = container.getRootNode();
+  if (rootNode instanceof ShadowRoot) {
+    rootNode.appendChild(tooltip);
+  } else {
+    document.body.appendChild(tooltip);
+  }
+  disposer.add(() => tooltip.remove());
+
+  function showTooltip(el: Element): void {
+    const text = el.getAttribute('data-tip');
+    if (!text) {
+      tooltip.hidden = true;
+      return;
+    }
+    const rect = el.getBoundingClientRect();
+    tooltip.textContent = text;
+    tooltip.style.left = `${rect.left + rect.width / 2}px`;
+    tooltip.style.top = `${rect.bottom + 4}px`;
+    tooltip.hidden = false;
+  }
+
+  function hideTooltip(): void {
+    tooltip.hidden = true;
+  }
+
   // State
   let currentTarget: Element | null = null;
   let currentLocator: ElementLocator | null = null;
@@ -303,6 +363,9 @@ export function createPropsPanel(options: PropsPanelOptions): PropsPanel {
   const metaTitleRow = document.createElement('div');
   metaTitleRow.className = 'we-props-meta-title';
 
+  const titleLeft = document.createElement('div');
+  titleLeft.className = 'we-props-title-left';
+
   const componentEl = document.createElement('div');
   componentEl.className = 'we-props-component';
   componentEl.textContent = 'Props';
@@ -311,7 +374,34 @@ export function createPropsPanel(options: PropsPanelOptions): PropsPanel {
   frameworkEl.className = 'we-props-badge';
   frameworkEl.textContent = 'Unknown';
 
-  metaTitleRow.append(componentEl, frameworkEl);
+  titleLeft.append(componentEl, frameworkEl);
+
+  // Action buttons in title row (icon style)
+  const titleActions = document.createElement('div');
+  titleActions.className = 'we-props-title-actions';
+
+  const refreshBtn = document.createElement('button');
+  refreshBtn.type = 'button';
+  refreshBtn.className = 'we-props-action-btn';
+  refreshBtn.dataset.tip = 'Refresh';
+  refreshBtn.setAttribute('aria-label', 'Refresh props');
+  // Refresh icon (circular arrow)
+  refreshBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M11.5 7C11.5 9.48528 9.48528 11.5 7 11.5C4.51472 11.5 2.5 9.48528 2.5 7C2.5 4.51472 4.51472 2.5 7 2.5C8.5 2.5 9.83 3.25 10.6 4.4M10.6 2V4.4H8.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+
+  const resetBtn = document.createElement('button');
+  resetBtn.type = 'button';
+  resetBtn.className = 'we-props-action-btn';
+  resetBtn.dataset.tip = 'Reset';
+  resetBtn.setAttribute('aria-label', 'Reset props changes');
+  // Reset icon (undo arrow)
+  resetBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M3 5.5H8.5C10.1569 5.5 11.5 6.84315 11.5 8.5C11.5 10.1569 10.1569 11.5 8.5 11.5H7M3 5.5L5.5 3M3 5.5L5.5 8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+
+  titleActions.append(refreshBtn, resetBtn);
+  metaTitleRow.append(titleLeft, titleActions);
 
   const statusEl = document.createElement('div');
   statusEl.className = 'we-props-status';
@@ -324,21 +414,32 @@ export function createPropsPanel(options: PropsPanelOptions): PropsPanel {
   errorEl.className = 'we-props-error';
   errorEl.hidden = true;
 
-  const actionsRow = document.createElement('div');
-  actionsRow.className = 'we-props-actions';
+  // Source row - shows component source file location with "Open in VSCode" button
+  const sourceRow = document.createElement('div');
+  sourceRow.className = 'we-props-source';
+  sourceRow.hidden = true;
 
-  const refreshBtn = document.createElement('button');
-  refreshBtn.type = 'button';
-  refreshBtn.className = 'we-btn';
-  refreshBtn.textContent = 'Refresh';
+  const sourceLabelEl = document.createElement('span');
+  sourceLabelEl.className = 'we-props-source-label';
+  sourceLabelEl.textContent = 'Source';
 
-  const resetBtn = document.createElement('button');
-  resetBtn.type = 'button';
-  resetBtn.className = 'we-btn';
-  resetBtn.textContent = 'Reset';
+  const sourcePathEl = document.createElement('span');
+  sourcePathEl.className = 'we-props-source-path';
+  sourcePathEl.title = ''; // Will be set to full path on render
 
-  actionsRow.append(refreshBtn, resetBtn);
-  meta.append(metaTitleRow, statusEl, warningEl, errorEl, actionsRow);
+  const openSourceBtn = document.createElement('button');
+  openSourceBtn.type = 'button';
+  openSourceBtn.className = 'we-props-source-btn';
+  openSourceBtn.dataset.tip = 'Open in VSCode';
+  openSourceBtn.setAttribute('aria-label', 'Open in VSCode');
+  // Simple arrow pointing to top-right (external link style)
+  openSourceBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M3.5 2.5H9.5V8.5M9 3L3 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+
+  sourceRow.append(sourceLabelEl, sourcePathEl, openSourceBtn);
+
+  meta.append(metaTitleRow, statusEl, warningEl, errorEl, sourceRow);
 
   // List section
   const list = document.createElement('div');
@@ -417,10 +518,11 @@ export function createPropsPanel(options: PropsPanelOptions): PropsPanel {
   function renderMeta(): void {
     const hasTarget = Boolean(currentTarget && currentTarget.isConnected);
     const framework = lastData?.framework;
+    const frameworkVersion = lastData?.frameworkVersion;
     const componentName = lastData?.componentName;
 
     componentEl.textContent = componentName || 'Props';
-    frameworkEl.textContent = formatFramework(framework);
+    frameworkEl.textContent = formatFramework(framework, frameworkVersion);
 
     statusEl.textContent = hasTarget
       ? buildStatusLine(loading, lastData, lastError)
@@ -448,13 +550,19 @@ export function createPropsPanel(options: PropsPanelOptions): PropsPanel {
     errorEl.hidden = !lastError;
     errorEl.textContent = lastError ?? '';
 
-    // Update refresh button text based on needsRefresh state
-    // Only show "Enable & Reload" for hook issues that can benefit from early injection
+    // Source display - show component file location with Open button
+    const sourceText = hasTarget ? formatDebugSource(lastData?.debugSource) : '';
+    sourceRow.hidden = !sourceText;
+    sourcePathEl.textContent = sourceText;
+    sourcePathEl.title = sourceText; // Show full path on hover
+    openSourceBtn.disabled = !sourceText || loading;
+
+    // Update refresh button state and tooltip
     const hookStatus = lastData?.hookStatus;
     const canBenefitFromEarlyInjection =
       hookStatus === 'HOOK_MISSING' || hookStatus === 'HOOK_PRESENT_NO_RENDERERS';
     const showEnableReload = lastData?.needsRefresh && canBenefitFromEarlyInjection;
-    refreshBtn.textContent = showEnableReload ? 'Enable & Reload' : 'Refresh';
+    refreshBtn.dataset.tip = showEnableReload ? 'Enable & Reload' : 'Refresh';
     refreshBtn.disabled = !hasTarget || loading;
     resetBtn.disabled = !hasTarget || loading || !getCanWrite(lastData);
   }
@@ -467,15 +575,23 @@ export function createPropsPanel(options: PropsPanelOptions): PropsPanel {
 
     if (!hasTarget) {
       emptyState.hidden = false;
+      emptyState.classList.remove('we-loading');
       emptyState.textContent = 'Select an element to view props.';
       return;
     }
 
     if (loading) {
       emptyState.hidden = false;
-      emptyState.textContent = 'Loading props…';
+      emptyState.classList.add('we-loading');
+      // Spinner icon (thin stroke) + text
+      emptyState.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="animation: we-spin 0.8s linear infinite;">
+        <circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-dasharray="20 14" />
+      </svg><span>Loading props…</span>`;
       return;
     }
+
+    // Remove loading class when not loading
+    emptyState.classList.remove('we-loading');
 
     const canRead = getCanRead(data);
     if (!canRead) {
@@ -841,9 +957,49 @@ export function createPropsPanel(options: PropsPanelOptions): PropsPanel {
     }
   }
 
+  /**
+   * Send message to background to open source file in VSCode.
+   */
+  async function openSourceInVSCode(): Promise<void> {
+    if (disposer.isDisposed) return;
+
+    const debugSource = lastData?.debugSource;
+    if (!debugSource || !formatDebugSource(debugSource)) return;
+
+    if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
+      lastError = 'Chrome runtime API not available';
+      renderMeta();
+      return;
+    }
+
+    try {
+      const resp = await chrome.runtime.sendMessage({
+        type: BACKGROUND_MESSAGE_TYPES.WEB_EDITOR_OPEN_SOURCE,
+        payload: { debugSource },
+      });
+
+      if (resp?.success === false) {
+        lastError = resp?.error ?? 'Failed to open source in VSCode';
+        renderMeta();
+      }
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      renderMeta();
+    }
+  }
+
   // ==========================================================================
   // Event Handlers
   // ==========================================================================
+
+  // Tooltip events - bind directly to elements with data-tip
+  const bindTooltip = (el: HTMLElement) => {
+    disposer.listen(el, 'mouseenter', () => showTooltip(el));
+    disposer.listen(el, 'mouseleave', hideTooltip);
+  };
+  bindTooltip(refreshBtn);
+  bindTooltip(resetBtn);
+  bindTooltip(openSourceBtn);
 
   disposer.listen(refreshBtn, 'click', (e) => {
     e.preventDefault();
@@ -866,6 +1022,11 @@ export function createPropsPanel(options: PropsPanelOptions): PropsPanel {
   disposer.listen(resetBtn, 'click', (e) => {
     e.preventDefault();
     void resetOverrides();
+  });
+
+  disposer.listen(openSourceBtn, 'click', (e) => {
+    e.preventDefault();
+    void openSourceInVSCode();
   });
 
   // Delegate input events within the list

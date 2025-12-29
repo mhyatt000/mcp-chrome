@@ -46,7 +46,7 @@ import { getDefaultWorkspaceDir, getDefaultProjectRoot } from '../../agent/stora
 import { openDirectoryPicker } from '../../agent/directory-picker';
 import type { EngineName } from '../../agent/engines/types';
 import { attachmentService } from '../../agent/attachment-service';
-import { openProjectDirectory } from '../../agent/open-project';
+import { openProjectDirectory, openFileInVSCode } from '../../agent/open-project';
 import type {
   AttachmentStatsResponse,
   AttachmentCleanupRequest,
@@ -719,6 +719,66 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         fastify.log.error({ err: error }, 'Failed to open project');
+        return reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({
+          success: false,
+          error: message || ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+        });
+      }
+    },
+  );
+
+  /**
+   * POST /agent/projects/:projectId/open-file
+   * Open a file in VSCode at a specific line/column.
+   *
+   * Request body:
+   * - filePath: string (required) - File path (relative or absolute)
+   * - line?: number - Line number (1-based)
+   * - column?: number - Column number (1-based)
+   */
+  fastify.post(
+    '/agent/projects/:projectId/open-file',
+    async (
+      request: FastifyRequest<{
+        Params: { projectId: string };
+        Body: { filePath?: string; line?: number; column?: number };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      const { projectId } = request.params;
+      const { filePath, line, column } = request.body || {};
+
+      if (!projectId) {
+        return reply
+          .status(HTTP_STATUS.BAD_REQUEST)
+          .send({ success: false, error: 'projectId is required' });
+      }
+      if (!filePath || typeof filePath !== 'string') {
+        return reply
+          .status(HTTP_STATUS.BAD_REQUEST)
+          .send({ success: false, error: 'filePath is required' });
+      }
+
+      try {
+        const project = await getProject(projectId);
+        if (!project) {
+          return reply
+            .status(HTTP_STATUS.NOT_FOUND)
+            .send({ success: false, error: 'Project not found' });
+        }
+
+        // Open the file in VSCode
+        const result = await openFileInVSCode(project.rootPath, filePath, line, column);
+        if (result.success) {
+          return reply.status(HTTP_STATUS.OK).send({ success: true });
+        }
+        return reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({
+          success: false,
+          error: result.error,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        fastify.log.error({ err: error }, 'Failed to open file in VSCode');
         return reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({
           success: false,
           error: message || ERROR_MESSAGES.INTERNAL_SERVER_ERROR,

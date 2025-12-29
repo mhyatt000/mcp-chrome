@@ -41,6 +41,8 @@ export interface EnqueueRunDeps {
 export interface EnqueueRunInput {
   /** Flow ID (必选) */
   flowId: FlowId;
+  /** 起始节点 ID (可选，默认使用 Flow 的 entryNodeId) */
+  startNodeId?: NodeId;
   /** 优先级 (默认 0) */
   priority?: number;
   /** 最大尝试次数 (默认 1) */
@@ -158,6 +160,14 @@ export async function enqueueRun(
     throw new Error(`Flow "${flowId}" not found`);
   }
 
+  // 验证 startNodeId 存在于 Flow 中
+  if (input.startNodeId) {
+    const nodeExists = flow.nodes.some((n) => n.id === input.startNodeId);
+    if (!nodeExists) {
+      throw new Error(`startNodeId "${input.startNodeId}" not found in flow "${flowId}"`);
+    }
+  }
+
   const ts = now();
   const runId = generateRunId();
 
@@ -174,6 +184,7 @@ export async function enqueueRun(
     args: input.args,
     trigger: input.trigger,
     debug: input.debug,
+    startNodeId: input.startNodeId,
     nextSeq: 0,
   };
   await deps.storage.runs.save(runRecord);

@@ -645,6 +645,7 @@
 
   /* Button/interactive element base */
   .agent-theme .ac-btn {
+    cursor: pointer;
     transition:
       background-color var(--ac-motion-fast),
       color var(--ac-motion-fast);
@@ -656,6 +657,7 @@
 
   /* Menu item */
   .agent-theme .ac-menu-item {
+    cursor: pointer;
     transition: background-color var(--ac-motion-fast);
   }
 
@@ -694,24 +696,32 @@
      Loading Animation - Shimmer Text & Scribble Icon
      ============================================================ */
 
-  /* 文案 shimmer 渐变动画 */
+  /* 文案 shimmer 渐变动画 - 光从左到右扫过效果 */
   .agent-theme .text-shimmer {
+    display: inline-block;
     background: linear-gradient(
       90deg,
       var(--ac-accent, #d97757) 0%,
-      var(--ac-accent-hover, #ffcab0) 50%,
+      var(--ac-accent, #d97757) 40%,
+      #ffe0d0 50%,
+      var(--ac-accent, #d97757) 60%,
       var(--ac-accent, #d97757) 100%
     );
-    background-size: 200% auto;
+    background-size: 250% 100%;
+    background-repeat: no-repeat;
     color: transparent;
     -webkit-background-clip: text;
     background-clip: text;
-    animation: ac-shimmer 3s linear infinite;
+    -webkit-text-fill-color: transparent;
+    animation: ac-shimmer 1.8s ease-in-out infinite;
   }
 
   @keyframes ac-shimmer {
-    to {
-      background-position: 200% center;
+    0% {
+      background-position: 100% 50%;
+    }
+    100% {
+      background-position: 0% 50%;
     }
   }
 

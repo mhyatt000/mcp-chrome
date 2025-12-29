@@ -3072,11 +3072,125 @@ const SHADOW_HOST_STYLES = /* css */ `
     padding: 6px 8px;
   }
 
-  .we-props-actions {
+  .we-props-source {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex-wrap: wrap;
+    font-size: 11px;
+    padding: 4px 0;
+  }
+
+  .we-props-source[hidden] {
+    display: none;
+  }
+
+  .we-props-source-label {
+    flex: 0 0 auto;
+    color: #64748b;
+    font-weight: 500;
+  }
+
+  .we-props-source-path {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--we-text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  .we-btn-small {
+    padding: 2px 8px;
+    font-size: 11px;
+  }
+
+  /* Source open button - minimal link style */
+  .we-props-source-btn {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px;
+    margin-left: 2px;
+    border: none;
+    background: none;
+    color: #64748b;
+    cursor: pointer;
+    transition: color 0.12s ease;
+  }
+
+  .we-props-source-btn:hover:not(:disabled) {
+    color: #3b82f6;
+  }
+
+  .we-props-source-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  .we-props-source-btn svg {
+    display: block;
+  }
+
+  /* Tooltip - fixed position, mounted at shadow root level */
+  .we-tooltip {
+    position: fixed;
+    transform: translateX(-50%);
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.2;
+    color: #fff;
+    background: rgba(15, 23, 42, 0.92);
+    border-radius: 4px;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 10000;
+  }
+
+  .we-tooltip[hidden] {
+    display: none;
+  }
+
+  .we-props-title-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .we-props-title-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: auto;
+  }
+
+  /* Action button - minimal icon style for title bar */
+  .we-props-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    border: none;
+    background: none;
+    color: var(--we-text-secondary);
+    cursor: pointer;
+    transition: color 0.12s ease;
+  }
+
+  .we-props-action-btn:hover:not(:disabled) {
+    color: var(--we-text-primary);
+  }
+
+  .we-props-action-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  .we-props-action-btn svg {
+    display: block;
   }
 
   .we-props-list {
@@ -3092,6 +3206,45 @@ const SHADOW_HOST_STYLES = /* css */ `
 
   .we-props-empty[hidden] {
     display: none;
+  }
+
+  /* Loading animations */
+  @keyframes we-shimmer {
+    to {
+      background-position: 200% center;
+    }
+  }
+
+  @keyframes we-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .we-props-empty.we-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .we-props-empty.we-loading svg {
+    flex-shrink: 0;
+    color: #94a3b8;
+  }
+
+  .we-props-empty.we-loading span {
+    background: linear-gradient(
+      90deg,
+      #64748b 0%,
+      #94a3b8 50%,
+      #64748b 100%
+    );
+    background-size: 200% auto;
+    color: transparent;
+    -webkit-background-clip: text;
+    background-clip: text;
+    animation: we-shimmer 2s linear infinite;
   }
 
   .we-props-group {

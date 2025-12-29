@@ -73,19 +73,16 @@
           <h2 class="section-title">快捷工具</h2>
           <div class="rr-icon-buttons">
             <button
-              class="rr-icon-btn rr-icon-btn-record has-tooltip"
-              :class="{ 'rr-icon-btn-recording': rrRecording }"
+              class="rr-icon-btn rr-icon-btn-record rr-icon-btn-coming-soon has-tooltip"
               @click="startRecording"
-              :disabled="rrRecording"
-              :data-tooltip="rrRecording ? '录制中...' : '开始录制'"
+              data-tooltip="录制功能开发中"
             >
-              <RecordIcon :recording="rrRecording" />
+              <RecordIcon :recording="false" />
             </button>
             <button
-              class="rr-icon-btn rr-icon-btn-stop has-tooltip"
+              class="rr-icon-btn rr-icon-btn-stop rr-icon-btn-coming-soon has-tooltip"
               @click="stopRecording"
-              :disabled="!rrRecording"
-              data-tooltip="停止并保存"
+              data-tooltip="录制功能开发中"
             >
               <StopIcon />
             </button>
@@ -143,12 +140,15 @@
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
               </svg>
             </button>
-            <button class="entry-item" @click="openWorkflowSidepanel">
+            <button class="entry-item entry-item-coming-soon" @click="openWorkflowSidepanel">
               <div class="entry-icon workflow">
                 <WorkflowIcon />
               </div>
               <div class="entry-content">
-                <span class="entry-title">工作流管理</span>
+                <span class="entry-title">
+                  工作流管理
+                  <span class="coming-soon-badge">Coming Soon</span>
+                </span>
                 <span class="entry-desc">录制与回放自动化流程</span>
               </div>
               <svg
@@ -311,6 +311,23 @@
     />
 
     <!-- 侧边栏承担工作流管理；编辑器在独立窗口中打开 -->
+
+    <!-- Coming Soon Toast -->
+    <Transition name="toast">
+      <div v-if="comingSoonToast.show" class="coming-soon-toast">
+        <svg
+          class="toast-icon"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 6v6l4 2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <span>{{ comingSoonToast.feature }} 功能开发中，敬请期待</span>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -354,6 +371,16 @@ const { theme: agentTheme, initTheme } = useAgentTheme();
 
 // 当前视图状态：首页 or 本地模型页
 const currentView = ref<'home' | 'local-model'>('home');
+
+// Coming Soon Toast
+const comingSoonToast = ref<{ show: boolean; feature: string }>({ show: false, feature: '' });
+
+function showComingSoonToast(feature: string) {
+  comingSoonToast.value = { show: true, feature };
+  setTimeout(() => {
+    comingSoonToast.value = { show: false, feature: '' };
+  }, 2000);
+}
 
 // Record & Replay state
 const rrRecording = ref(false);
@@ -405,31 +432,37 @@ function isFlowBoundToCurrent(flow: any) {
 
 // 运行记录与覆盖项在侧边栏页面查看
 const startRecording = async () => {
-  if (rrRecording.value) return;
-  try {
-    const res = await chrome.runtime.sendMessage({
-      type: BACKGROUND_MESSAGE_TYPES.RR_START_RECORDING,
-      meta: { name: '新录制' },
-    });
-    rrRecording.value = !!(res && res.success);
-  } catch (e) {
-    console.error('开始录制失败:', e);
-    rrRecording.value = false;
-  }
+  // TODO: 录制回放功能开发中，暂时拦截
+  showComingSoonToast('录制回放');
+  return;
+  // if (rrRecording.value) return;
+  // try {
+  //   const res = await chrome.runtime.sendMessage({
+  //     type: BACKGROUND_MESSAGE_TYPES.RR_START_RECORDING,
+  //     meta: { name: '新录制' },
+  //   });
+  //   rrRecording.value = !!(res && res.success);
+  // } catch (e) {
+  //   console.error('开始录制失败:', e);
+  //   rrRecording.value = false;
+  // }
 };
 
 const stopRecording = async () => {
-  if (!rrRecording.value) return;
-  try {
-    const res = await chrome.runtime.sendMessage({
-      type: BACKGROUND_MESSAGE_TYPES.RR_STOP_RECORDING,
-    });
-    rrRecording.value = false;
-    if (res && res.success) await loadFlows();
-  } catch (e) {
-    console.error('停止录制失败:', e);
-    rrRecording.value = false;
-  }
+  // TODO: 录制回放功能开发中，暂时拦截
+  showComingSoonToast('录制回放');
+  return;
+  // if (!rrRecording.value) return;
+  // try {
+  //   const res = await chrome.runtime.sendMessage({
+  //     type: BACKGROUND_MESSAGE_TYPES.RR_STOP_RECORDING,
+  //   });
+  //   rrRecording.value = false;
+  //   if (res && res.success) await loadFlows();
+  // } catch (e) {
+  //   console.error('停止录制失败:', e);
+  //   rrRecording.value = false;
+  // }
 };
 
 const runFlow = async (flowId: string) => {
@@ -601,7 +634,9 @@ async function openSidepanelAndClose(tab: string) {
 
 // Open sidepanel from popup for workflow management
 function openWorkflowSidepanel() {
-  openSidepanelAndClose('workflows');
+  // TODO: 工作流功能开发中，暂时拦截
+  showComingSoonToast('工作流管理');
+  // openSidepanelAndClose('workflows');
 }
 
 // Open sidepanel for element marker management
@@ -2423,6 +2458,18 @@ onUnmounted(() => {
   color: #059669;
 }
 
+/* Coming Soon 按钮样式 */
+.rr-icon-btn-coming-soon {
+  opacity: 0.5;
+  cursor: default !important;
+}
+
+.rr-icon-btn-coming-soon:hover {
+  transform: none !important;
+  box-shadow: none !important;
+  opacity: 0.6;
+}
+
 /* CSS Tooltip - instant display */
 .has-tooltip {
   position: relative;
@@ -2565,5 +2612,68 @@ onUnmounted(() => {
 .entry-arrow {
   color: var(--ac-text-subtle, #a8a29e);
   flex-shrink: 0;
+}
+
+/* Coming Soon Badge */
+.coming-soon-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 2px 6px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--ac-accent, #d97757);
+  background: rgba(217, 119, 87, 0.12);
+  border-radius: 4px;
+  vertical-align: middle;
+}
+
+.entry-item-coming-soon {
+  opacity: 0.7;
+}
+
+.entry-item-coming-soon:hover {
+  opacity: 0.85;
+}
+
+/* Coming Soon Toast */
+.coming-soon-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: var(--ac-text, #1a1a1a);
+  color: var(--ac-text-inverse, #ffffff);
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: var(--ac-radius-card, 12px);
+  box-shadow: var(--ac-shadow-float, 0 4px 20px -2px rgba(0, 0, 0, 0.15));
+  z-index: 1000;
+  white-space: nowrap;
+}
+
+.toast-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--ac-accent, #d97757);
+}
+
+/* Toast transition */
+.toast-enter-active,
+.toast-leave-active {
+  transition: all 0.25s ease;
+}
+
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(12px);
 }
 </style>

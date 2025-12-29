@@ -20,7 +20,8 @@
     "postinstall": "node dist/scripts/postinstall.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/node_path.txt"
   ],
   "engines": {
     "node": ">=20.0.0"

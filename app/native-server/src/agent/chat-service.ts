@@ -16,6 +16,7 @@ import {
   getSession,
   updateEngineSessionId,
   updateManagementInfo,
+  touchSessionActivity,
   type AgentSession,
 } from './session-service';
 import { attachmentService, type SavedAttachment } from './attachment-service';
@@ -226,6 +227,10 @@ export class AgentChatService {
       // Persist user message into project history for later reload.
       try {
         await touchProjectActivity(projectId);
+        // Update session activity timestamp so it appears at top of session list
+        if (dbSessionId) {
+          await touchSessionActivity(dbSessionId);
+        }
         await persistAgentMessage({
           projectId,
           role: 'user',

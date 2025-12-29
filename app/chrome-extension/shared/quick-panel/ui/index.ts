@@ -53,6 +53,8 @@ export {
   type QuickPanelMessageRendererOptions,
 } from './message-renderer';
 
+export { createMarkdownRenderer, type MarkdownRendererInstance } from './markdown-renderer';
+
 export {
   mountQuickPanelAiChatPanel,
   type QuickPanelAiChatPanelManager,

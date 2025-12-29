@@ -102,7 +102,7 @@
     <button
       v-show="isHovering"
       type="button"
-      class="flex items-center justify-center w-4 h-4 -ml-1 mr-1 rounded-full transition-colors"
+      class="flex items-center justify-center w-4 h-4 -ml-1 mr-1 rounded-full transition-colors cursor-pointer"
       :style="revertButtonStyle"
       :aria-label="`Revert changes to ${element.label}`"
       :title="`Revert all changes to ${element.label}`"

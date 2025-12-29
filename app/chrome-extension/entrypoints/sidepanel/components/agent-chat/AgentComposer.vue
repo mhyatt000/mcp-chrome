@@ -49,7 +49,7 @@
         </div>
         <!-- Remove button (appears on hover) -->
         <button
-          class="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+          class="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
           :style="{
             backgroundColor: 'var(--ac-error)',
             color: 'white',
@@ -133,7 +133,7 @@
           <button
             v-if="showExpandButton"
             type="button"
-            class="absolute top-2 right-2 p-1.5 transition-all hover:scale-105"
+            class="absolute top-2 right-2 p-1.5 transition-all hover:scale-105 cursor-pointer"
             :style="expandButtonStyle"
             title="Expand editor"
             @click="openDrawer"
@@ -283,7 +283,7 @@
           <!-- Primary Action Button: Send (idle) / Stop (loading) -->
           <button
             type="button"
-            class="p-1.5 transition-colors"
+            class="p-1 transition-colors cursor-pointer"
             :style="primaryActionButtonStyle"
             :disabled="primaryActionDisabled"
             :title="isRequestActive ? 'Stop' : 'Send'"
@@ -291,11 +291,11 @@
             @click="handlePrimaryAction"
           >
             <!-- Stop icon (square) when request is active -->
-            <svg v-if="isRequestActive" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+            <svg v-if="isRequestActive" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
               <rect x="6" y="6" width="12" height="12" rx="2" />
             </svg>
             <!-- Send icon (arrow up) when idle -->
-            <svg v-else class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg v-else class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path
                 stroke-linecap="round"
                 stroke-linejoin="round"

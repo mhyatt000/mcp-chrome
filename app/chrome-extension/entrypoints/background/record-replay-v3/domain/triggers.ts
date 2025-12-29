@@ -7,7 +7,15 @@ import type { JsonObject, UnixMillis } from './json';
 import type { FlowId, TriggerId } from './ids';
 
 /** 触发器类型 */
-export type TriggerKind = 'manual' | 'url' | 'cron' | 'command' | 'contextMenu' | 'dom';
+export type TriggerKind =
+  | 'manual'
+  | 'url'
+  | 'cron'
+  | 'interval'
+  | 'once'
+  | 'command'
+  | 'contextMenu'
+  | 'dom';
 
 /**
  * 触发器基础接口
@@ -51,6 +59,20 @@ export type TriggerSpec =
       kind: 'cron';
       cron: string;
       timezone?: string;
+    })
+
+  // Interval 定时触发（固定间隔重复）
+  | (TriggerSpecBase & {
+      kind: 'interval';
+      /** 间隔分钟数，最小为 1 */
+      periodMinutes: number;
+    })
+
+  // Once 定时触发（指定时间触发一次后自动禁用）
+  | (TriggerSpecBase & {
+      kind: 'once';
+      /** 触发时间戳 (Unix milliseconds) */
+      whenMs: UnixMillis;
     })
 
   // 快捷键触发

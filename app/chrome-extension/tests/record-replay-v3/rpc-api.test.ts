@@ -368,6 +368,47 @@ describe('V3 RPC Queue Management APIs', () => {
         ),
       ).rejects.toThrow('maxAttempts must be >= 1');
     });
+
+    it('persists startNodeId in RunRecord when provided', async () => {
+      // Setup: add a flow with multiple nodes
+      const flow = createTestFlow('flow-start-node');
+      getInternal(storage).flowsMap.set(flow.id, flow);
+
+      // Act: enqueue with startNodeId
+      const targetNodeId = flow.nodes[0].id; // Use the first node
+      await (server as unknown as { handleRequest: Function }).handleRequest(
+        {
+          method: 'rr_v3.enqueueRun',
+          params: { flowId: 'flow-start-node', startNodeId: targetNodeId },
+          requestId: 'req-1',
+        },
+        { subscriptions: new Set() },
+      );
+
+      // Assert: RunRecord should have startNodeId
+      const runsMap = getInternal(storage).runsMap;
+      expect(runsMap.size).toBe(1);
+      const runRecord = Array.from(runsMap.values())[0];
+      expect(runRecord.startNodeId).toBe(targetNodeId);
+    });
+
+    it('throws if startNodeId does not exist in flow', async () => {
+      // Setup: add a flow
+      const flow = createTestFlow('flow-invalid-start');
+      getInternal(storage).flowsMap.set(flow.id, flow);
+
+      // Act & Assert
+      await expect(
+        (server as unknown as { handleRequest: Function }).handleRequest(
+          {
+            method: 'rr_v3.enqueueRun',
+            params: { flowId: 'flow-invalid-start', startNodeId: 'non-existent-node' },
+            requestId: 'req-1',
+          },
+          { subscriptions: new Set() },
+        ),
+      ).rejects.toThrow('startNodeId "non-existent-node" not found in flow');
+    });
   });
 
   describe('rr_v3.listQueue', () => {

@@ -987,6 +987,86 @@ export function initWebEditorListeners(): void {
         return true; // Async response
       }
 
+      // =====================================================================
+      // WEB_EDITOR_OPEN_SOURCE: Open component source file in VSCode
+      // =====================================================================
+      if (message?.type === BACKGROUND_MESSAGE_TYPES.WEB_EDITOR_OPEN_SOURCE) {
+        (async () => {
+          try {
+            const payload = message.payload as { debugSource?: unknown } | undefined;
+            const debugSource = payload?.debugSource;
+
+            if (!debugSource || typeof debugSource !== 'object') {
+              return sendResponse({ success: false, error: 'debugSource is required' });
+            }
+
+            const rec = debugSource as Record<string, unknown>;
+            const file = typeof rec.file === 'string' ? rec.file.trim() : '';
+            if (!file) {
+              return sendResponse({ success: false, error: 'debugSource.file is required' });
+            }
+
+            // Read server port and selected project
+            const stored = await chrome.storage.local.get([
+              'nativeServerPort',
+              'agent-selected-project-id',
+            ]);
+            const portRaw = stored.nativeServerPort;
+            const port = Number.isFinite(Number(portRaw))
+              ? Number(portRaw)
+              : DEFAULT_NATIVE_SERVER_PORT;
+            const projectId = stored['agent-selected-project-id'];
+
+            if (!projectId || typeof projectId !== 'string') {
+              return sendResponse({
+                success: false,
+                error: 'No project selected. Please select a project in AgentChat first.',
+              });
+            }
+
+            // Prepare line/column
+            const lineRaw = Number(rec.line);
+            const columnRaw = Number(rec.column);
+            const line = Number.isFinite(lineRaw) && lineRaw > 0 ? lineRaw : undefined;
+            const column = Number.isFinite(columnRaw) && columnRaw > 0 ? columnRaw : undefined;
+
+            // Call native-server to open file (server will validate project and path)
+            const openResp = await fetch(
+              `http://127.0.0.1:${port}/agent/projects/${encodeURIComponent(projectId)}/open-file`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  filePath: file,
+                  line,
+                  column,
+                }),
+              },
+            );
+
+            // Try to parse JSON response for detailed error
+            let result: { success: boolean; error?: string };
+            try {
+              result = await openResp.json();
+            } catch {
+              const text = await openResp.text().catch(() => '');
+              result = {
+                success: false,
+                error: text || `HTTP ${openResp.status}`,
+              };
+            }
+
+            sendResponse(result);
+          } catch (err) {
+            sendResponse({
+              success: false,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        })();
+        return true; // Async response
+      }
+
       if (message?.type === BACKGROUND_MESSAGE_TYPES.WEB_EDITOR_TOGGLE) {
         getActiveTabId()
           .then(async (tabId) => {

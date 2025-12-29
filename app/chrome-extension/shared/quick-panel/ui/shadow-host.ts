@@ -76,6 +76,9 @@ const THEME_STORAGE_KEY = 'agentTheme';
 /** Default theme if none is set */
 const DEFAULT_THEME_ID = 'warm-editorial';
 
+/** Dark theme ID for dark mode */
+const DARK_THEME_ID = 'dark-console';
+
 /** Valid theme IDs (subset supported by Quick Panel) */
 const VALID_THEME_IDS = new Set([
   'warm-editorial',
@@ -83,6 +86,15 @@ const VALID_THEME_IDS = new Set([
   'zen-journal',
   'neo-pop',
   'dark-console',
+  'swiss-grid',
+]);
+
+/** Light theme IDs that should switch to dark in dark mode */
+const LIGHT_THEME_IDS = new Set([
+  'warm-editorial',
+  'blueprint-architect',
+  'zen-journal',
+  'neo-pop',
   'swiss-grid',
 ]);
 
@@ -143,6 +155,28 @@ function normalizeThemeId(value: unknown): string {
 }
 
 /**
+ * Check if system prefers dark mode.
+ */
+function systemPrefersDark(): boolean {
+  try {
+    return globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get effective theme ID considering system dark mode preference.
+ * If system is in dark mode and the theme is a light theme, switch to dark-console.
+ */
+function getEffectiveThemeId(baseThemeId: string): string {
+  if (systemPrefersDark() && LIGHT_THEME_IDS.has(baseThemeId)) {
+    return DARK_THEME_ID;
+  }
+  return baseThemeId;
+}
+
+/**
  * Read the stored theme ID from chrome.storage.
  */
 async function readStoredThemeId(): Promise<string> {
@@ -156,10 +190,12 @@ async function readStoredThemeId(): Promise<string> {
 }
 
 /**
- * Apply a theme ID to the root element.
+ * Apply a theme ID to the root element, considering system dark mode preference.
  */
 function applyThemeId(root: HTMLElement, themeId: string): void {
-  root.dataset.agentTheme = normalizeThemeId(themeId);
+  const normalizedTheme = normalizeThemeId(themeId);
+  const effectiveTheme = getEffectiveThemeId(normalizedTheme);
+  root.dataset.agentTheme = effectiveTheme;
 }
 
 // ============================================================
@@ -265,6 +301,15 @@ export function mountQuickPanelShadowHost(
     applyThemeId(root, themeId);
   })();
 
+  // System dark mode change listener
+  // Re-apply theme when system color scheme changes
+  let currentStoredThemeId = DEFAULT_THEME_ID;
+
+  // Track the stored theme ID
+  void (async () => {
+    currentStoredThemeId = await readStoredThemeId();
+  })();
+
   // Theme change listener
   const handleStorageChange = (
     changes: Record<string, chrome.storage.StorageChange>,
@@ -273,7 +318,9 @@ export function mountQuickPanelShadowHost(
     if (areaName !== 'local') return;
     const change = changes[THEME_STORAGE_KEY];
     if (!change) return;
-    applyThemeId(root, change.newValue);
+    // Update tracked theme ID and apply
+    currentStoredThemeId = normalizeThemeId(change.newValue);
+    applyThemeId(root, currentStoredThemeId);
   };
 
   try {
@@ -281,6 +328,23 @@ export function mountQuickPanelShadowHost(
     disposer.add(() => chrome?.storage?.onChanged?.removeListener(handleStorageChange));
   } catch {
     // Best-effort: theme sync is optional
+  }
+
+  try {
+    const darkModeMediaQuery = globalThis.matchMedia?.('(prefers-color-scheme: dark)');
+    if (darkModeMediaQuery) {
+      const handleDarkModeChange = (): void => {
+        applyThemeId(root, currentStoredThemeId);
+      };
+
+      // Use addEventListener for modern browsers
+      if (typeof darkModeMediaQuery.addEventListener === 'function') {
+        darkModeMediaQuery.addEventListener('change', handleDarkModeChange);
+        disposer.add(() => darkModeMediaQuery.removeEventListener('change', handleDarkModeChange));
+      }
+    }
+  } catch {
+    // Best-effort: dark mode detection is optional
   }
 
   // Helper to check if a node belongs to this shadow host

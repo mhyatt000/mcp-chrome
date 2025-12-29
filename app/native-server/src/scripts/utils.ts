@@ -125,6 +125,28 @@ export async function getMainPath(): Promise<string> {
 }
 
 /**
+ * Write Node.js executable path to node_path.txt for run_host scripts.
+ * This ensures the native host uses the same Node.js version that was used during installation,
+ * avoiding NODE_MODULE_VERSION mismatch errors with native modules like better-sqlite3.
+ *
+ * @param distDir - The dist directory where node_path.txt should be written
+ * @param nodeExecPath - The Node.js executable path to write (defaults to current process.execPath)
+ */
+export function writeNodePathFile(distDir: string, nodeExecPath = process.execPath): void {
+  try {
+    const nodePathFile = path.join(distDir, 'node_path.txt');
+    fs.mkdirSync(distDir, { recursive: true });
+
+    console.log(colorText(`Writing Node.js path: ${nodeExecPath}`, 'blue'));
+    fs.writeFileSync(nodePathFile, nodeExecPath, 'utf8');
+    console.log(colorText('✓ Node.js path written for run_host scripts', 'green'));
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(colorText(`⚠️ Failed to write Node.js path: ${message}`, 'yellow'));
+  }
+}
+
+/**
  * 确保关键文件具有执行权限
  */
 export async function ensureExecutionPermissions(): Promise<void> {
@@ -257,6 +279,21 @@ function verifyWindowsRegistryEntry(registryKey: string, expectedPath: string): 
   }
 
   return false;
+}
+
+/**
+ * Write node_path.txt and then register user-level Native Messaging host.
+ * This is the recommended entry point for development and production registration,
+ * as it ensures the Node.js path is captured before registration.
+ *
+ * @param browsers - Optional list of browsers to register for
+ * @returns true if at least one browser was registered successfully
+ */
+export async function registerUserLevelHostWithNodePath(
+  browsers?: BrowserType[],
+): Promise<boolean> {
+  writeNodePathFile(path.join(__dirname, '..'));
+  return tryRegisterUserLevelHost(browsers);
 }
 
 /**

@@ -15,6 +15,8 @@
  * - Linux: gnome-terminal, konsole, xfce4-terminal, xterm
  */
 import os from 'node:os';
+import path from 'node:path';
+import { stat } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import type { OpenProjectResponse, OpenProjectTarget } from 'chrome-mcp-shared';
 import { validateRootPath } from './project-service';
@@ -205,6 +207,128 @@ async function openInVSCode(absolutePath: string): Promise<void> {
   }
 
   await runFallbackSequence(`Failed to open VS Code for: ${absolutePath}`, attempts);
+}
+
+/**
+ * Open a file in VS Code at a specific line/column.
+ *
+ * Uses 'code -g file:line:col' syntax for goto functionality.
+ * Also opens the project root with -r to reuse existing window.
+ *
+ * Security:
+ * - Validates that file path stays within project root
+ * - Uses spawn with args array (no shell interpolation)
+ *
+ * @param projectRoot - Project root directory (for security validation and -r flag)
+ * @param filePath - File path (relative or absolute)
+ * @param line - Optional line number (1-based)
+ * @param column - Optional column number (1-based)
+ */
+export async function openFileInVSCode(
+  projectRoot: string,
+  filePath: string,
+  line?: number,
+  column?: number,
+): Promise<OpenProjectResponse> {
+  try {
+    // Validate project root
+    const projectValidation = await validateRootPath(projectRoot);
+    if (!projectValidation.valid) {
+      return {
+        success: false,
+        error: projectValidation.error ?? 'Invalid project rootPath',
+      };
+    }
+    if (!projectValidation.exists) {
+      return {
+        success: false,
+        error: `Project directory does not exist: ${projectValidation.absolute}`,
+      };
+    }
+
+    const rootAbs = projectValidation.absolute;
+
+    // Validate file path
+    const trimmedFile = String(filePath ?? '').trim();
+    if (!trimmedFile) {
+      return { success: false, error: 'filePath is required' };
+    }
+
+    // Resolve file path (relative paths are resolved against project root)
+    const absoluteFile = path.isAbsolute(trimmedFile)
+      ? path.resolve(trimmedFile)
+      : path.resolve(rootAbs, trimmedFile);
+
+    // Security: ensure file stays within project root
+    const relativeToRoot = path.relative(rootAbs, absoluteFile);
+    if (relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) {
+      return { success: false, error: 'File path must be within project directory' };
+    }
+
+    // Check file exists (best-effort, don't fail hard if file is new)
+    try {
+      const fileStat = await stat(absoluteFile);
+      if (!fileStat.isFile()) {
+        return { success: false, error: `Not a file: ${absoluteFile}` };
+      }
+    } catch {
+      return { success: false, error: `File does not exist: ${absoluteFile}` };
+    }
+
+    // Validate and sanitize line/column
+    const safeLine =
+      typeof line === 'number' && Number.isFinite(line) && line > 0 ? Math.floor(line) : undefined;
+    const safeColumn =
+      typeof column === 'number' && Number.isFinite(column) && column > 0
+        ? Math.floor(column)
+        : undefined;
+
+    // Build goto argument: file:line:col
+    let gotoArg = absoluteFile;
+    if (safeLine) {
+      gotoArg += `:${safeLine}`;
+      if (safeColumn) {
+        gotoArg += `:${safeColumn}`;
+      }
+    }
+
+    const platform = os.platform();
+
+    // Build launch attempts
+    // Use -r to reuse existing window, -g for goto
+    const attempts: LaunchAttempt[] = [
+      {
+        label: 'code -r -g',
+        cmd: 'code',
+        args: ['-r', rootAbs, '-g', gotoArg],
+        successAfterMs: 8000,
+      },
+    ];
+
+    if (platform === 'win32') {
+      attempts.push({
+        label: 'code.cmd -r -g',
+        cmd: 'code.cmd',
+        args: ['-r', rootAbs, '-g', gotoArg],
+        successAfterMs: 8000,
+      });
+    }
+
+    if (platform === 'darwin') {
+      // macOS: use --args to pass flags to VS Code
+      attempts.push({
+        label: 'open -b com.microsoft.VSCode --args',
+        cmd: 'open',
+        args: ['-b', 'com.microsoft.VSCode', '--args', '-r', rootAbs, '-g', gotoArg],
+        successAfterMs: 3000,
+      });
+    }
+
+    await runFallbackSequence(`Failed to open VS Code for: ${gotoArg}`, attempts);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: formatSpawnError(error) };
+  }
 }
 
 // ============================================================

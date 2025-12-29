@@ -4,7 +4,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { COMMAND_NAME } from './constant';
-import { colorText, tryRegisterUserLevelHost } from './utils';
+import { colorText, tryRegisterUserLevelHost, writeNodePathFile } from './utils';
 
 // Check if this script is run directly
 const isDirectRun = require.main === module;
@@ -70,22 +70,6 @@ function isRunningElevated(): boolean {
   } else {
     // On Unix, check if running as root (UID 0)
     return process.getuid?.() === 0;
-  }
-}
-
-/**
- * Write Node.js path for run_host scripts to avoid fragile relative paths
- */
-async function writeNodePath(): Promise<void> {
-  try {
-    const nodePath = process.execPath;
-    const nodePathFile = path.join(__dirname, '..', 'node_path.txt');
-
-    console.log(colorText(`Writing Node.js path: ${nodePath}`, 'blue'));
-    fs.writeFileSync(nodePathFile, nodePath, 'utf8');
-    console.log(colorText('✓ Node.js path written for run_host scripts', 'green'));
-  } catch (error: any) {
-    console.warn(colorText(`⚠️ Failed to write Node.js path: ${error.message}`, 'yellow'));
   }
 }
 
@@ -310,7 +294,7 @@ async function main(): Promise<void> {
   await ensureExecutionPermissions();
 
   // Write Node.js path for run_host scripts to use
-  await writeNodePath();
+  writeNodePathFile(path.join(__dirname, '..'));
 
   // If global installation, try automatic registration
   if (isGlobalInstall) {
