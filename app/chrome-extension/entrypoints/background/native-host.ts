@@ -2,7 +2,7 @@ import { NativeMessageType } from 'chrome-mcp-shared';
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
 import { NATIVE_HOST, STORAGE_KEYS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '@/common/constants';
 import { handleCallTool } from './tools';
-import { listPublished, getFlow } from './record-replay/flow-store';
+import { bootstrapV3 } from './record-replay-v3/bootstrap';
 import { acquireKeepalive } from './keepalive-manager';
 
 const LOG_PREFIX = '[NativeHost]';
@@ -381,21 +381,18 @@ export function connectNativeHost(port: number = NATIVE_HOST.DEFAULT_PORT): bool
       } else if (message.type === 'rr_list_published_flows' && message.requestId) {
         const requestId = message.requestId;
         try {
-          const published = await listPublished();
-          const items = [] as any[];
-          for (const p of published) {
-            const flow = await getFlow(p.id);
-            if (!flow) continue;
-            items.push({
-              id: p.id,
-              slug: p.slug,
-              version: p.version,
-              name: p.name,
-              description: p.description || flow.description || '',
-              variables: flow.variables || [],
-              meta: flow.meta || {},
-            });
-          }
+          // Use V3 runtime to list flows
+          const runtime = await bootstrapV3();
+          const flows = await runtime.storage.flows.list();
+          const items = flows.map((flow) => ({
+            id: flow.id,
+            slug: flow.meta?.tool?.slug ?? flow.id,
+            version: flow.schemaVersion,
+            name: flow.name,
+            description: flow.description || '',
+            variables: flow.variables || [],
+            meta: flow.meta || {},
+          }));
           nativePort?.postMessage({
             responseToRequestId: requestId,
             payload: { status: 'success', items },

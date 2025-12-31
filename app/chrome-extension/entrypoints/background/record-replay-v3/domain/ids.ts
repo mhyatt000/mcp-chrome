@@ -6,6 +6,9 @@
 /** Flow 唯一标识符 */
 export type FlowId = string;
 
+/** Subflow 唯一标识符 */
+export type SubflowId = string;
+
 /** Node 唯一标识符 */
 export type NodeId = string;
 

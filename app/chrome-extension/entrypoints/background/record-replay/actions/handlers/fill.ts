@@ -53,8 +53,8 @@ export const fillHandler: ActionHandler<'fill'> = {
       return failed('TAB_NOT_FOUND', 'No active tab found');
     }
 
-    // Ensure page is read before locating element
-    await handleCallTool({ name: TOOL_NAMES.BROWSER.READ_PAGE, args: {} });
+    // Ensure page is read for the target tab before locating element
+    await handleCallTool({ name: TOOL_NAMES.BROWSER.READ_PAGE, args: { tabId } });
 
     // Resolve fill value
     const valueResolved = resolveString(action.params.value, vars);

@@ -12,6 +12,7 @@ import type { RRError } from '../../domain/errors';
 import type { NodePolicy } from '../../domain/policy';
 import type { FlowV3, NodeV3 } from '../../domain/flow';
 import type { TriggerKind } from '../../domain/triggers';
+import type { ControlDirectiveV3 } from '../../domain/control';
 
 /**
  * Schema 类型
@@ -80,14 +81,35 @@ export interface VarsPatchOp {
   value?: JsonValue;
 }
 
+/** 下一步执行方向类型 */
+export type NextDirection = { kind: 'edgeLabel'; label: string } | { kind: 'end' };
+
 /**
  * 节点执行结果
+ *
+ * 分为三种情况：
+ * 1. 普通成功：无 control 字段，直接进入下一个节点
+ * 2. 控制流成功：有 control 字段，Runner 执行控制流指令后再进入下一个节点
+ * 3. 失败：status 为 'failed'，携带错误信息
  */
 export type NodeExecutionResult =
   | {
       status: 'succeeded';
+      /** 控制流指令（互斥，普通节点不应设置此字段） */
+      control?: never;
       /** 下一步执行方向 */
-      next?: { kind: 'edgeLabel'; label: string } | { kind: 'end' };
+      next?: NextDirection;
+      /** 输出结果 */
+      outputs?: JsonObject;
+      /** 变量修改 */
+      varsPatch?: VarsPatchOp[];
+    }
+  | {
+      status: 'succeeded';
+      /** 控制流指令（由 Runner 执行） */
+      control: ControlDirectiveV3;
+      /** 下一步执行方向（控制流执行完成后生效） */
+      next?: NextDirection;
       /** 输出结果 */
       outputs?: JsonObject;
       /** 变量修改 */

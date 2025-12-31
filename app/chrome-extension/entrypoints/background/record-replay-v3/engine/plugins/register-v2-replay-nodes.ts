@@ -40,8 +40,8 @@ export interface RegisterV2ReplayNodesOptions extends V2ActionNodeAdapterOptions
  * ```ts
  * const plugins = new PluginRegistry();
  * const registered = registerV2ReplayNodesAsV3Nodes(plugins, {
- *   // Exclude control flow handlers that V3 runner doesn't support
- *   exclude: ['foreach', 'while'],
+ *   // Optionally exclude specific handlers
+ *   exclude: ['someUnwantedHandler'],
  * });
  * console.log('Registered:', registered);
  * ```
@@ -85,6 +85,7 @@ export function listV2ActionTypes(): string[] {
 
 /**
  * Default exclude list for V3 registration.
- * These handlers rely on V2 control directives that V3 runner doesn't support.
+ * Previously excluded foreach/while due to unsupported control directives,
+ * but V3 runner now supports them via ControlDirectiveV3.
  */
-export const DEFAULT_V2_EXCLUDE_LIST = ['foreach', 'while'] as const;
+export const DEFAULT_V2_EXCLUDE_LIST: readonly string[] = [];

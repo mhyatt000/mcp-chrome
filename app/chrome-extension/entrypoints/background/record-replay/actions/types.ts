@@ -797,6 +797,15 @@ export type ControlDirective =
       condition: Condition;
       subflowId: SubflowId;
       maxIterations: number;
+    }
+  | {
+      kind: 'executeFlow';
+      /** Target flow ID */
+      flowId: FlowId;
+      /** Optional args merged into callee vars */
+      args?: JsonObject;
+      /** inline=true shares vars with caller */
+      inline?: boolean;
     };
 
 export interface ActionExecutionResult<T extends ActionType = ActionType> {
@@ -805,7 +814,7 @@ export interface ActionExecutionResult<T extends ActionType = ActionType> {
   error?: ActionError;
   /** 下一个边的 label（用于条件分支） */
   nextLabel?: EdgeLabel;
-  /** 控制流指令（foreach/while） */
+  /** 控制流指令（foreach/while/executeFlow） */
   control?: ControlDirective;
   /** 执行耗时 */
   durationMs?: Milliseconds;

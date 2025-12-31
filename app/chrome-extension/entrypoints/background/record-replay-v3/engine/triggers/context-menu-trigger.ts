@@ -140,6 +140,17 @@ export function createContextMenuTriggerHandler(
         return;
       }
 
+      // MV3 SW restart idempotency: contextMenus persist across SW restarts.
+      // Remove existing menu item first (ignoring errors) to avoid duplicate-id errors.
+      if (chrome.contextMenus?.remove) {
+        await new Promise<void>((resolve) => {
+          chrome.contextMenus.remove(menuItemId, () => {
+            // Ignore errors - item may not exist
+            resolve();
+          });
+        });
+      }
+
       // Create menu item
       await new Promise<void>((resolve, reject) => {
         chrome.contextMenus.create(

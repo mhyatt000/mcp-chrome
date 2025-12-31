@@ -4,7 +4,7 @@
  */
 
 import type { NodeId, EdgeLabel } from '../../domain/ids';
-import type { FlowV3, EdgeV3 } from '../../domain/flow';
+import type { GraphV3, EdgeV3 } from '../../domain/flow';
 import { EDGE_LABELS } from '../../domain/ids';
 import { RR_ERROR_CODES, createRRError, type RRError } from '../../domain/errors';
 
@@ -14,26 +14,26 @@ import { RR_ERROR_CODES, createRRError, type RRError } from '../../domain/errors
 export type ValidateFlowDAGResult = { ok: true } | { ok: false; errors: RRError[] };
 
 /**
- * 校验 Flow DAG 结构
- * @param flow Flow 定义
+ * 校验 Graph DAG 结构
+ * @param graph Graph 定义（FlowV3 或 SubflowV3）
  * @returns 校验结果
  */
-export function validateFlowDAG(flow: FlowV3): ValidateFlowDAGResult {
+export function validateFlowDAG(graph: GraphV3): ValidateFlowDAGResult {
   const errors: RRError[] = [];
-  const nodeIds = new Set(flow.nodes.map((n) => n.id));
+  const nodeIds = new Set(graph.nodes.map((n) => n.id));
 
   // 检查 entryNodeId 是否存在
-  if (!nodeIds.has(flow.entryNodeId)) {
+  if (!nodeIds.has(graph.entryNodeId)) {
     errors.push(
       createRRError(
         RR_ERROR_CODES.DAG_INVALID,
-        `Entry node "${flow.entryNodeId}" does not exist in flow`,
+        `Entry node "${graph.entryNodeId}" does not exist in graph`,
       ),
     );
   }
 
   // 检查边引用的节点是否存在
-  for (const edge of flow.edges) {
+  for (const edge of graph.edges) {
     if (!nodeIds.has(edge.from)) {
       errors.push(
         createRRError(
@@ -53,10 +53,10 @@ export function validateFlowDAG(flow: FlowV3): ValidateFlowDAGResult {
   }
 
   // 检查循环
-  const cycle = detectCycle(flow);
+  const cycle = detectCycle(graph);
   if (cycle) {
     errors.push(
-      createRRError(RR_ERROR_CODES.DAG_CYCLE, `Cycle detected in flow: ${cycle.join(' -> ')}`),
+      createRRError(RR_ERROR_CODES.DAG_CYCLE, `Cycle detected in graph: ${cycle.join(' -> ')}`),
     );
   }
 
@@ -65,11 +65,11 @@ export function validateFlowDAG(flow: FlowV3): ValidateFlowDAGResult {
 
 /**
  * 检测 DAG 中的循环
- * @param flow Flow 定义
+ * @param graph Graph 定义
  * @returns 循环路径（如果存在）或 null
  */
-export function detectCycle(flow: FlowV3): NodeId[] | null {
-  const adjacency = buildAdjacencyMap(flow);
+export function detectCycle(graph: GraphV3): NodeId[] | null {
+  const adjacency = buildAdjacencyMap(graph);
   const visited = new Set<NodeId>();
   const recursionStack = new Set<NodeId>();
   const path: NodeId[] = [];
@@ -99,7 +99,7 @@ export function detectCycle(flow: FlowV3): NodeId[] | null {
     return false;
   }
 
-  for (const node of flow.nodes) {
+  for (const node of graph.nodes) {
     if (!visited.has(node.id)) {
       if (dfs(node.id)) {
         return path;
@@ -112,17 +112,17 @@ export function detectCycle(flow: FlowV3): NodeId[] | null {
 
 /**
  * 查找下一个节点
- * @param flow Flow 定义
+ * @param graph Graph 定义
  * @param currentNodeId 当前节点 ID
  * @param label 边标签（可选，默认使用 default）
  * @returns 下一个节点 ID 或 null（如果没有后续节点）
  */
 export function findNextNode(
-  flow: FlowV3,
+  graph: GraphV3,
   currentNodeId: NodeId,
   label?: EdgeLabel,
 ): NodeId | null {
-  const outEdges = flow.edges.filter((e) => e.from === currentNodeId);
+  const outEdges = graph.edges.filter((e) => e.from === currentNodeId);
 
   if (outEdges.length === 0) {
     return null;
@@ -156,38 +156,38 @@ export function findNextNode(
  * 查找指定标签的边
  */
 export function findEdgeByLabel(
-  flow: FlowV3,
+  graph: GraphV3,
   fromNodeId: NodeId,
   label: EdgeLabel,
 ): EdgeV3 | undefined {
-  return flow.edges.find((e) => e.from === fromNodeId && e.label === label);
+  return graph.edges.find((e) => e.from === fromNodeId && e.label === label);
 }
 
 /**
  * 获取节点的所有出边
  */
-export function getOutEdges(flow: FlowV3, nodeId: NodeId): EdgeV3[] {
-  return flow.edges.filter((e) => e.from === nodeId);
+export function getOutEdges(graph: GraphV3, nodeId: NodeId): EdgeV3[] {
+  return graph.edges.filter((e) => e.from === nodeId);
 }
 
 /**
  * 获取节点的所有入边
  */
-export function getInEdges(flow: FlowV3, nodeId: NodeId): EdgeV3[] {
-  return flow.edges.filter((e) => e.to === nodeId);
+export function getInEdges(graph: GraphV3, nodeId: NodeId): EdgeV3[] {
+  return graph.edges.filter((e) => e.to === nodeId);
 }
 
 /**
  * 构建邻接表
  */
-function buildAdjacencyMap(flow: FlowV3): Map<NodeId, NodeId[]> {
+function buildAdjacencyMap(graph: GraphV3): Map<NodeId, NodeId[]> {
   const map = new Map<NodeId, NodeId[]>();
 
-  for (const node of flow.nodes) {
+  for (const node of graph.nodes) {
     map.set(node.id, []);
   }
 
-  for (const edge of flow.edges) {
+  for (const edge of graph.edges) {
     const neighbors = map.get(edge.from);
     if (neighbors) {
       neighbors.push(edge.to);
@@ -200,9 +200,9 @@ function buildAdjacencyMap(flow: FlowV3): Map<NodeId, NodeId[]> {
 /**
  * 获取从入口节点可达的所有节点
  */
-export function getReachableNodes(flow: FlowV3): Set<NodeId> {
+export function getReachableNodes(graph: GraphV3): Set<NodeId> {
   const reachable = new Set<NodeId>();
-  const adjacency = buildAdjacencyMap(flow);
+  const adjacency = buildAdjacencyMap(graph);
 
   function dfs(nodeId: NodeId): void {
     if (reachable.has(nodeId)) return;
@@ -214,13 +214,13 @@ export function getReachableNodes(flow: FlowV3): Set<NodeId> {
     }
   }
 
-  dfs(flow.entryNodeId);
+  dfs(graph.entryNodeId);
   return reachable;
 }
 
 /**
  * 检查节点是否可达
  */
-export function isNodeReachable(flow: FlowV3, nodeId: NodeId): boolean {
-  return getReachableNodes(flow).has(nodeId);
+export function isNodeReachable(graph: GraphV3, nodeId: NodeId): boolean {
+  return getReachableNodes(graph).has(nodeId);
 }

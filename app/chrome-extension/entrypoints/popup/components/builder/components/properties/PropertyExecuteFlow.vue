@@ -29,17 +29,23 @@
 /* eslint-disable vue/no-mutating-props */
 import { computed, onMounted, ref } from 'vue';
 import type { NodeBase } from '@/entrypoints/background/record-replay/types';
-import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
+import { useRRV3Rpc } from '@/entrypoints/shared/composables';
 
 const props = defineProps<{ node: NodeBase }>();
+
+const rpc = useRRV3Rpc({ autoConnect: true });
 
 type FlowLite = { id: string; name?: string };
 const flows = ref<FlowLite[]>([]);
 onMounted(async () => {
   try {
-    const res = await chrome.runtime.sendMessage({ type: BACKGROUND_MESSAGE_TYPES.RR_LIST_FLOWS });
-    if (res && res.success) flows.value = res.flows || [];
-  } catch {}
+    await rpc.ensureConnected();
+    // rr_v3.listFlows returns array directly, not { flows: [...] }
+    const res = await rpc.request<FlowLite[]>('rr_v3.listFlows');
+    flows.value = Array.isArray(res) ? res : [];
+  } catch (e) {
+    console.warn('[PropertyExecuteFlow] Failed to load flows:', e);
+  }
 });
 
 const execArgsJson = computed({

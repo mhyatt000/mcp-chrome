@@ -15,6 +15,10 @@ import {
   type QuickPanelActivateTabResponse,
   type QuickPanelCloseTabMessage,
   type QuickPanelCloseTabResponse,
+  type QuickPanelTabSetMutedMessage,
+  type QuickPanelTabSetMutedResponse,
+  type QuickPanelTabSetPinnedMessage,
+  type QuickPanelTabSetPinnedResponse,
   type QuickPanelTabSummary,
   type QuickPanelTabsQueryMessage,
   type QuickPanelTabsQueryResponse,
@@ -190,6 +194,60 @@ async function handleCloseTab(
   }
 }
 
+async function handleSetPinned(
+  message: QuickPanelTabSetPinnedMessage,
+): Promise<QuickPanelTabSetPinnedResponse> {
+  try {
+    const tabId = message.payload?.tabId;
+    const pinned = message.payload?.pinned;
+
+    if (!isValidTabId(tabId)) {
+      return { success: false, error: 'Invalid tabId' };
+    }
+
+    if (typeof pinned !== 'boolean') {
+      return { success: false, error: 'Invalid pinned value' };
+    }
+
+    await chrome.tabs.update(tabId, { pinned });
+
+    return { success: true };
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} Error setting tab pinned state:`, err);
+    return {
+      success: false,
+      error: safeErrorMessage(err) || 'Failed to set tab pinned state',
+    };
+  }
+}
+
+async function handleSetMuted(
+  message: QuickPanelTabSetMutedMessage,
+): Promise<QuickPanelTabSetMutedResponse> {
+  try {
+    const tabId = message.payload?.tabId;
+    const muted = message.payload?.muted;
+
+    if (!isValidTabId(tabId)) {
+      return { success: false, error: 'Invalid tabId' };
+    }
+
+    if (typeof muted !== 'boolean') {
+      return { success: false, error: 'Invalid muted value' };
+    }
+
+    await chrome.tabs.update(tabId, { muted });
+
+    return { success: true };
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} Error setting tab muted state:`, err);
+    return {
+      success: false,
+      error: safeErrorMessage(err) || 'Failed to set tab muted state',
+    };
+  }
+}
+
 // ============================================================
 // Initialization
 // ============================================================
@@ -220,6 +278,18 @@ export function initQuickPanelTabsHandler(): void {
     // Tab close
     if (message?.type === BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_TAB_CLOSE) {
       handleCloseTab(message as QuickPanelCloseTabMessage).then(sendResponse);
+      return true;
+    }
+
+    // Tab set pinned
+    if (message?.type === BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_TAB_SET_PINNED) {
+      handleSetPinned(message as QuickPanelTabSetPinnedMessage).then(sendResponse);
+      return true;
+    }
+
+    // Tab set muted
+    if (message?.type === BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_TAB_SET_MUTED) {
+      handleSetMuted(message as QuickPanelTabSetMutedMessage).then(sendResponse);
       return true;
     }
 

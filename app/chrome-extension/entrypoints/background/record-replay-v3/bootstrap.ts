@@ -50,6 +50,7 @@ import {
 
 import { acquireKeepalive } from '../keepalive-manager';
 import { createStoragePort } from './index';
+import { ensureMigratedV2ToV3 } from './storage/import/v2-migration';
 
 // ==================== Types ====================
 
@@ -290,6 +291,20 @@ export async function bootstrapV3(): Promise<V3Runtime> {
     // 1) Storage
     const storage = createStoragePort();
 
+    // 1.5) One-time V2 -> V3 data migration (best-effort, non-blocking)
+    // Must run before triggers.start() to ensure migrated triggers are available
+    try {
+      const migrationState = await ensureMigratedV2ToV3({ storage, logger });
+      if (migrationState.status === 'done') {
+        logger.debug('[RR-V3] V2->V3 migration complete');
+      } else if (migrationState.status === 'failed') {
+        logger.warn('[RR-V3] V2->V3 migration failed:', migrationState.error);
+      }
+    } catch (e) {
+      // Migration failure should not block V3 startup
+      logger.warn('[RR-V3] V2->V3 migration error (non-fatal):', e);
+    }
+
     // 2) EventsBus
     const events: EventsBus = new StorageBackedEventsBus(storage.events);
 
@@ -312,7 +327,7 @@ export async function bootstrapV3(): Promise<V3Runtime> {
     // 7) PluginRegistry - register V2 action handlers as V3 nodes
     const plugins = new PluginRegistry();
     const registeredNodes = registerV2ReplayNodesAsV3Nodes(plugins, {
-      // Exclude control directives that V3 runner doesn't support
+      // DEFAULT_V2_EXCLUDE_LIST is now empty since V3 supports all V2 control directives
       exclude: [...DEFAULT_V2_EXCLUDE_LIST],
     });
     logger.debug(`[RR-V3] Registered ${registeredNodes.length} V2 action handlers as V3 nodes`);

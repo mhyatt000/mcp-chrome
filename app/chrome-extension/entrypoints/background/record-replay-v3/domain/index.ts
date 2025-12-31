@@ -18,8 +18,14 @@ export * from './policy';
 // 变量类型
 export * from './variables';
 
+// 条件表达式类型
+export * from './condition';
+
 // Flow 类型
 export * from './flow';
+
+// 控制流类型
+export * from './control';
 
 // 事件类型
 export * from './events';

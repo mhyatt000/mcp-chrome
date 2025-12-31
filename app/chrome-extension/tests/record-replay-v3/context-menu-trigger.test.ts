@@ -318,7 +318,9 @@ describe('V3 ContextMenuTriggerHandler', () => {
       await handler.install(t2);
       await handler.uninstallAll();
 
-      expect(contextMenusMock.remove).toHaveBeenCalledTimes(2);
+      // MV3 idempotency: install() removes existing menu item first to avoid duplicate-id errors on SW restart
+      // So total = 2 (install removes) + 2 (uninstallAll removes) = 4
+      expect(contextMenusMock.remove).toHaveBeenCalledTimes(4);
     });
   });
 

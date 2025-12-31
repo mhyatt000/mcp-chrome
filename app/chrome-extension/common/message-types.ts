@@ -84,10 +84,25 @@ export const BACKGROUND_MESSAGE_TYPES = {
   // Quick Panel <-> AgentChat integration
   QUICK_PANEL_SEND_TO_AI: 'quick_panel_send_to_ai',
   QUICK_PANEL_CANCEL_AI: 'quick_panel_cancel_ai',
+  QUICK_PANEL_GET_PROJECT_INFO: 'quick_panel_get_project_info',
   // Quick Panel Search - Tabs bridge
   QUICK_PANEL_TABS_QUERY: 'quick_panel_tabs_query',
   QUICK_PANEL_TAB_ACTIVATE: 'quick_panel_tab_activate',
   QUICK_PANEL_TAB_CLOSE: 'quick_panel_tab_close',
+  // Quick Panel Search - Tabs secondary actions
+  QUICK_PANEL_TAB_SET_PINNED: 'quick_panel_tab_set_pinned',
+  QUICK_PANEL_TAB_SET_MUTED: 'quick_panel_tab_set_muted',
+  // Quick Panel Search - Bookmarks bridge
+  QUICK_PANEL_BOOKMARKS_QUERY: 'quick_panel_bookmarks_query',
+  // Quick Panel Search - History bridge
+  QUICK_PANEL_HISTORY_QUERY: 'quick_panel_history_query',
+  // Quick Panel Navigation & Commands
+  QUICK_PANEL_OPEN_URL: 'quick_panel_open_url',
+  QUICK_PANEL_PAGE_COMMAND: 'quick_panel_page_command',
+  // Quick Panel Usage History (Frecency) - IndexedDB bridge
+  QUICK_PANEL_USAGE_RECORD: 'quick_panel_usage_record',
+  QUICK_PANEL_USAGE_GET_ENTRIES: 'quick_panel_usage_get_entries',
+  QUICK_PANEL_USAGE_LIST_RECENT: 'quick_panel_usage_list_recent',
 } as const;
 
 // Offscreen message types
@@ -301,6 +316,25 @@ export interface QuickPanelAIEventMessage {
   event: RealtimeEvent;
 }
 
+/**
+ * Response from QUICK_PANEL_GET_PROJECT_INFO message handler.
+ */
+export type QuickPanelGetProjectInfoResponse =
+  | {
+      success: true;
+      sessionId: string | null;
+      projectId: string | null;
+      projectName: string | null;
+    }
+  | { success: false; error: string };
+
+/**
+ * Message structure for getting current project info.
+ */
+export interface QuickPanelGetProjectInfoMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_GET_PROJECT_INFO;
+}
+
 // ============================================================
 // Quick Panel Search - Tabs Bridge Contracts
 // ============================================================
@@ -392,4 +426,281 @@ export type QuickPanelCloseTabResponse = { success: true } | { success: false; e
 export interface QuickPanelCloseTabMessage {
   type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_TAB_CLOSE;
   payload: QuickPanelCloseTabPayload;
+}
+
+// ============================================================
+// Quick Panel Search - Tabs Secondary Actions Contracts
+// ============================================================
+
+/**
+ * Payload for setting a tab's pinned state.
+ */
+export interface QuickPanelTabSetPinnedPayload {
+  tabId: number;
+  pinned: boolean;
+}
+
+/**
+ * Response from QUICK_PANEL_TAB_SET_PINNED message handler.
+ */
+export type QuickPanelTabSetPinnedResponse = { success: true } | { success: false; error: string };
+
+/**
+ * Message structure for setting tab pinned state.
+ */
+export interface QuickPanelTabSetPinnedMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_TAB_SET_PINNED;
+  payload: QuickPanelTabSetPinnedPayload;
+}
+
+/**
+ * Payload for setting a tab's muted state.
+ */
+export interface QuickPanelTabSetMutedPayload {
+  tabId: number;
+  muted: boolean;
+}
+
+/**
+ * Response from QUICK_PANEL_TAB_SET_MUTED message handler.
+ */
+export type QuickPanelTabSetMutedResponse = { success: true } | { success: false; error: string };
+
+/**
+ * Message structure for setting tab muted state.
+ */
+export interface QuickPanelTabSetMutedMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_TAB_SET_MUTED;
+  payload: QuickPanelTabSetMutedPayload;
+}
+
+// ============================================================
+// Quick Panel Search - Bookmarks Bridge Contracts
+// ============================================================
+
+/**
+ * Payload for querying bookmarks.
+ */
+export interface QuickPanelBookmarksQueryPayload {
+  query: string;
+  maxResults?: number;
+}
+
+/**
+ * Summary of a single bookmark returned from the background.
+ */
+export interface QuickPanelBookmarkSummary {
+  id: string;
+  title: string;
+  url: string;
+  dateAdded?: number;
+  parentId?: string;
+}
+
+/**
+ * Response from QUICK_PANEL_BOOKMARKS_QUERY message handler.
+ */
+export type QuickPanelBookmarksQueryResponse =
+  | { success: true; bookmarks: QuickPanelBookmarkSummary[] }
+  | { success: false; error: string };
+
+/**
+ * Message structure for querying bookmarks.
+ */
+export interface QuickPanelBookmarksQueryMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_BOOKMARKS_QUERY;
+  payload: QuickPanelBookmarksQueryPayload;
+}
+
+// ============================================================
+// Quick Panel Search - History Bridge Contracts
+// ============================================================
+
+/**
+ * Payload for querying history.
+ */
+export interface QuickPanelHistoryQueryPayload {
+  query: string;
+  maxResults?: number;
+}
+
+/**
+ * Summary of a single history item returned from the background.
+ */
+export interface QuickPanelHistorySummary {
+  id: string;
+  url: string;
+  title: string;
+  lastVisitTime?: number;
+  visitCount?: number;
+  typedCount?: number;
+}
+
+/**
+ * Response from QUICK_PANEL_HISTORY_QUERY message handler.
+ */
+export type QuickPanelHistoryQueryResponse =
+  | { success: true; items: QuickPanelHistorySummary[] }
+  | { success: false; error: string };
+
+/**
+ * Message structure for querying history.
+ */
+export interface QuickPanelHistoryQueryMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_HISTORY_QUERY;
+  payload: QuickPanelHistoryQueryPayload;
+}
+
+// ============================================================
+// Quick Panel Navigation Contracts
+// ============================================================
+
+/**
+ * URL opening disposition.
+ */
+export type QuickPanelOpenUrlDisposition = 'current_tab' | 'new_tab' | 'background_tab';
+
+/**
+ * Payload for opening a URL.
+ */
+export interface QuickPanelOpenUrlPayload {
+  url: string;
+  disposition?: QuickPanelOpenUrlDisposition;
+}
+
+/**
+ * Response from QUICK_PANEL_OPEN_URL message handler.
+ */
+export type QuickPanelOpenUrlResponse = { success: true } | { success: false; error: string };
+
+/**
+ * Message structure for opening a URL.
+ */
+export interface QuickPanelOpenUrlMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_OPEN_URL;
+  payload: QuickPanelOpenUrlPayload;
+}
+
+// ============================================================
+// Quick Panel Page Commands Contracts
+// ============================================================
+
+/**
+ * Available page commands.
+ */
+export type QuickPanelPageCommand =
+  | 'reload'
+  | 'back'
+  | 'forward'
+  | 'stop'
+  | 'close_tab'
+  | 'duplicate_tab'
+  | 'toggle_pin'
+  | 'toggle_mute'
+  | 'new_tab'
+  | 'new_window';
+
+/**
+ * Payload for executing a page command.
+ */
+export interface QuickPanelPageCommandPayload {
+  command: QuickPanelPageCommand;
+}
+
+/**
+ * Response from QUICK_PANEL_PAGE_COMMAND message handler.
+ */
+export type QuickPanelPageCommandResponse = { success: true } | { success: false; error: string };
+
+/**
+ * Message structure for executing a page command.
+ */
+export interface QuickPanelPageCommandMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_PAGE_COMMAND;
+  payload: QuickPanelPageCommandPayload;
+}
+
+// ============================================================
+// Quick Panel Usage History (Frecency) Contracts
+// ============================================================
+
+/**
+ * Summary of a single usage entry returned from the background.
+ */
+export interface QuickPanelUsageEntrySummary {
+  key: string;
+  lastUsedAt: number;
+  count: number;
+}
+
+/**
+ * Payload for recording a single usage event.
+ */
+export interface QuickPanelUsageRecordPayload {
+  /** History namespace (legacy chrome.storage.local key). */
+  namespace: string;
+  /** Usage key (e.g. `url:https://...` or `cmd:reload`). */
+  key: string;
+  /** Optional cap for entries in this namespace. */
+  maxEntries?: number;
+}
+
+/**
+ * Response from QUICK_PANEL_USAGE_RECORD message handler.
+ */
+export type QuickPanelUsageRecordResponse = { success: true } | { success: false; error: string };
+
+/**
+ * Message structure for recording usage.
+ */
+export interface QuickPanelUsageRecordMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_USAGE_RECORD;
+  payload: QuickPanelUsageRecordPayload;
+}
+
+/**
+ * Payload for fetching multiple usage entries by key.
+ */
+export interface QuickPanelUsageGetEntriesPayload {
+  namespace: string;
+  keys: string[];
+}
+
+/**
+ * Response from QUICK_PANEL_USAGE_GET_ENTRIES message handler.
+ */
+export type QuickPanelUsageGetEntriesResponse =
+  | { success: true; entries: QuickPanelUsageEntrySummary[] }
+  | { success: false; error: string };
+
+/**
+ * Message structure for fetching usage entries by key.
+ */
+export interface QuickPanelUsageGetEntriesMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_USAGE_GET_ENTRIES;
+  payload: QuickPanelUsageGetEntriesPayload;
+}
+
+/**
+ * Payload for listing recent usage entries.
+ */
+export interface QuickPanelUsageListRecentPayload {
+  namespace: string;
+  /** Maximum items to return (sorted by lastUsedAt DESC). */
+  limit?: number;
+}
+
+/**
+ * Response from QUICK_PANEL_USAGE_LIST_RECENT message handler.
+ */
+export type QuickPanelUsageListRecentResponse =
+  | { success: true; items: QuickPanelUsageEntrySummary[] }
+  | { success: false; error: string };
+
+/**
+ * Message structure for listing recent usage entries.
+ */
+export interface QuickPanelUsageListRecentMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_USAGE_LIST_RECENT;
+  payload: QuickPanelUsageListRecentPayload;
 }

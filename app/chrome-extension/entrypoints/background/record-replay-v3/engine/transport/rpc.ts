@@ -41,6 +41,12 @@ export type RpcMethod =
   | 'rr_v3.cancelRun'
   | 'rr_v3.pauseRun'
   | 'rr_v3.resumeRun'
+  // 录制方法（V2-backed，V3 RPC facade）
+  | 'rr_v3.startRecording'
+  | 'rr_v3.stopRecording'
+  | 'rr_v3.pauseRecording'
+  | 'rr_v3.resumeRecording'
+  | 'rr_v3.getRecordingStatus'
   // 调试方法
   | 'rr_v3.debug'
   // 订阅方法

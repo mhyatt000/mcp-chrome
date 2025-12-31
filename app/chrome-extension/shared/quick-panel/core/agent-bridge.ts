@@ -35,6 +35,7 @@ import {
   TOOL_MESSAGE_TYPES,
   type QuickPanelAIEventMessage,
   type QuickPanelCancelAIResponse,
+  type QuickPanelGetProjectInfoResponse,
   type QuickPanelSendToAIPayload,
   type QuickPanelSendToAIResponse,
 } from '@/common/message-types';
@@ -242,6 +243,28 @@ export class QuickPanelAgentBridge {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { success: false, error: msg || 'Failed to cancel request' };
+    }
+  }
+
+  /**
+   * Get current project info (session, project ID, and project name).
+   *
+   * @returns Promise resolving to project info or null values if not available
+   */
+  async getProjectInfo(): Promise<QuickPanelGetProjectInfoResponse> {
+    if (this.disposed) {
+      return { success: false, error: 'Bridge is disposed' };
+    }
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_GET_PROJECT_INFO,
+      });
+
+      return response as QuickPanelGetProjectInfoResponse;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { success: false, error: msg || 'Failed to get project info' };
     }
   }
 

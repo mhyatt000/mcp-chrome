@@ -4,7 +4,7 @@
  */
 
 import type { JsonObject, JsonValue, UnixMillis } from './json';
-import type { EdgeLabel, FlowId, NodeId, RunId } from './ids';
+import type { EdgeLabel, FlowId, NodeId, RunId, SubflowId } from './ids';
 import type { RRError } from './errors';
 import type { TriggerFireContext } from './triggers';
 
@@ -82,6 +82,41 @@ export type RunEvent =
       decision: 'retry' | 'continue' | 'stop' | 'goto';
     })
   | (EventBase & { type: 'node.skipped'; nodeId: NodeId; reason: 'disabled' | 'unreachable' })
+
+  // ===== 控制流事件 =====
+  | (EventBase & {
+      type: 'control.started';
+      /** 触发 directive 的节点 ID */
+      nodeId: NodeId;
+      kind: 'foreach' | 'while' | 'executeSubflow' | 'executeFlow';
+      subflowId?: SubflowId;
+      flowId?: FlowId;
+      totalIterations?: number;
+      maxIterations?: number;
+      /** executeFlow: true=共享变量表, false=隔离变量表 */
+      inline?: boolean;
+    })
+  | (EventBase & {
+      type: 'control.iteration';
+      /** 触发 directive 的节点 ID */
+      nodeId: NodeId;
+      kind: 'foreach' | 'while';
+      subflowId: SubflowId;
+      iteration: number;
+      totalIterations?: number;
+      maxIterations?: number;
+    })
+  | (EventBase & {
+      type: 'control.completed';
+      /** 触发 directive 的节点 ID */
+      nodeId: NodeId;
+      kind: 'foreach' | 'while' | 'executeSubflow' | 'executeFlow';
+      subflowId?: SubflowId;
+      flowId?: FlowId;
+      totalIterations?: number;
+      /** 控制流执行耗时（毫秒） */
+      tookMs?: number;
+    })
 
   // ===== 变量和日志事件 =====
   | (EventBase & {

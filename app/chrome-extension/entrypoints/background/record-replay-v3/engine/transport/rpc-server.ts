@@ -18,6 +18,7 @@ import type { RunScheduler } from '../queue/scheduler';
 import type { QueueItemStatus } from '../queue/queue';
 import { enqueueRun } from '../queue/enqueue-run';
 import type { TriggerManager } from '../triggers/trigger-manager';
+import { convertFlowV2ToV3 } from '../../storage/import/v2-to-v3';
 import {
   RR_V3_PORT_NAME,
   isRpcRequest,
@@ -26,6 +27,11 @@ import {
   createRpcEventMessage,
   type RpcRequest,
 } from './rpc';
+import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
+import { acquireKeepalive } from '@/entrypoints/background/keepalive-manager';
+import { RecorderManager } from '@/entrypoints/background/record-replay/recording/recorder-manager';
+import { recordingSession } from '@/entrypoints/background/record-replay/recording/session-manager';
+import type { Flow as FlowV2 } from '@/entrypoints/background/record-replay/types';
 
 /**
  * RPC Server 配置
@@ -58,6 +64,10 @@ function defaultGenerateRunId(): RunId {
   return `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /**
  * RPC Server
  * @description 处理来自 UI 的 RPC 请求
@@ -73,6 +83,12 @@ export class RpcServer {
   private readonly now: () => number;
   private readonly connections = new Map<string, PortConnection>();
   private eventUnsubscribe: (() => void) | null = null;
+  /**
+   * Keepalive hold for recording sessions.
+   * Recording relies on the background service worker to stay alive to receive
+   * content-script events; we hold keepalive until the session returns to idle.
+   */
+  private recordingKeepaliveRelease: (() => void) | null = null;
 
   constructor(config: RpcServerConfig) {
     this.storage = config.storage;
@@ -102,6 +118,9 @@ export class RpcServer {
    */
   stop(): void {
     chrome.runtime.onConnect.removeListener(this.handleConnect);
+
+    // Best-effort: ensure we don't keep the offscreen keepalive alive after server stop.
+    this.releaseRecordingKeepalive();
 
     if (this.eventUnsubscribe) {
       this.eventUnsubscribe();
@@ -198,6 +217,7 @@ export class RpcServer {
         startNodeId: params?.startNodeId as NodeId | undefined,
         priority: params?.priority as number | undefined,
         maxAttempts: params?.maxAttempts as number | undefined,
+        tabId: params?.tabId as number | undefined,
         args: params?.args as JsonObject | undefined,
         debug: params?.debug as { breakpoints?: string[]; pauseOnStart?: boolean } | undefined,
       },
@@ -407,6 +427,23 @@ export class RpcServer {
       case 'rr_v3.cancelRun':
         return this.handleCancelRun(params);
 
+      // ===== Recording APIs (V2-backed, V3 facade) =====
+
+      case 'rr_v3.startRecording':
+        return this.handleStartRecording(params);
+
+      case 'rr_v3.stopRecording':
+        return this.handleStopRecording(params);
+
+      case 'rr_v3.pauseRecording':
+        return this.handlePauseRecording(params);
+
+      case 'rr_v3.resumeRecording':
+        return this.handleResumeRecording(params);
+
+      case 'rr_v3.getRecordingStatus':
+        return this.handleGetRecordingStatus();
+
       default:
         throw new Error(`Unknown method: ${method}`);
     }
@@ -436,6 +473,9 @@ export class RpcServer {
 
     // 保存到存储（存储层会执行二次验证）
     await this.storage.flows.save(flow);
+
+    // 广播 flows 变更通知（兼容 Popup 的监听器）
+    this.broadcastFlowsChanged();
 
     return flow as unknown as JsonValue;
   }
@@ -478,6 +518,9 @@ export class RpcServer {
 
     // 删除 Flow
     await this.storage.flows.delete(flowId);
+
+    // 广播 flows 变更通知（兼容 Popup 的监听器）
+    this.broadcastFlowsChanged();
 
     return { ok: true, flowId };
   }
@@ -1155,6 +1198,207 @@ export class RpcServer {
 
     runner.cancel(reason);
     return { ok: true, runId };
+  }
+
+  // ===== Recording APIs (V2-backed, V3 facade) =====
+
+  /**
+   * Start recording.
+   * @description
+   * Recording currently remains on the proven V2 recording engine. This RPC method
+   * provides a V3-friendly facade so Popup/Sidepanel can use a single rr_v3 Port-RPC
+   * channel for both orchestration (V3) and recording (V2-backed).
+   *
+   * Important: we hold keepalive while recording is active to prevent MV3 SW idle termination.
+   */
+  private async handleStartRecording(params: JsonObject | undefined): Promise<JsonValue> {
+    // Acquire keepalive before any recording operations to prevent SW idle termination
+    this.ensureRecordingKeepaliveHeld();
+
+    try {
+      await RecorderManager.init();
+
+      const metaRaw = params?.meta as unknown;
+      const meta = isPlainObject(metaRaw) ? (metaRaw as Partial<FlowV2>) : undefined;
+
+      const result = await RecorderManager.start(meta);
+      return result as unknown as JsonValue;
+    } finally {
+      // Sync keepalive with actual session status (release if idle, keep if active)
+      this.syncRecordingKeepaliveHold();
+    }
+  }
+
+  /**
+   * Stop recording and persist the newly recorded flow into V3 storage.
+   * @description
+   * - Stops the V2 session (barrier protocol) and saves to V2 storage (legacy behavior).
+   * - Converts the returned V2 Flow into a FlowV3 and saves it into V3 IndexedDB.
+   * - Broadcasts RR_FLOWS_CHANGED so UIs refresh their rr_v3.listFlows view.
+   */
+  private async handleStopRecording(_params: JsonObject | undefined): Promise<JsonValue> {
+    // Ensure keepalive is held during stop + convert + save to prevent SW idle termination
+    this.ensureRecordingKeepaliveHeld();
+
+    try {
+      await RecorderManager.init();
+
+      const stopped = await RecorderManager.stop();
+
+      if (!stopped.success) {
+        return stopped as unknown as JsonValue;
+      }
+
+      const v2Flow = stopped.flow;
+      if (!v2Flow) {
+        // No flow returned (unexpected but non-fatal): recording stopped but nothing to persist to V3
+        return {
+          success: true,
+          v3Saved: false,
+          error: stopped.error ?? 'Recording stopped but no flow was returned',
+        } as unknown as JsonValue;
+      }
+
+      const converted = convertFlowV2ToV3(
+        v2Flow as unknown as Parameters<typeof convertFlowV2ToV3>[0],
+      );
+      if (!converted.success || !converted.data) {
+        const conversionError =
+          converted.errors.length > 0
+            ? converted.errors.join('; ')
+            : 'Failed to convert recorded flow to V3';
+        return {
+          success: true,
+          flowId: (v2Flow as FlowV2).id,
+          v3Saved: false,
+          error: [stopped.error, conversionError].filter(Boolean).join('; '),
+          v3Errors: converted.errors.slice(0, 20),
+          v3Warnings: converted.warnings.slice(0, 20),
+        } as unknown as JsonValue;
+      }
+
+      try {
+        await this.storage.flows.save(converted.data);
+        this.broadcastFlowsChanged();
+
+        return {
+          success: true,
+          flowId: converted.data.id,
+          v3Saved: true,
+          error: stopped.error,
+          v3Warnings: converted.warnings.slice(0, 20),
+        } as unknown as JsonValue;
+      } catch (e) {
+        const saveError = e instanceof Error ? e.message : String(e);
+        return {
+          success: true,
+          flowId: converted.data.id,
+          v3Saved: false,
+          error: [stopped.error, `Failed to save V3 flow: ${saveError}`].filter(Boolean).join('; '),
+        } as unknown as JsonValue;
+      }
+    } finally {
+      // Sync keepalive with actual session status (should release since recording stopped)
+      this.syncRecordingKeepaliveHold();
+    }
+  }
+
+  private async handlePauseRecording(_params: JsonObject | undefined): Promise<JsonValue> {
+    // Ensure keepalive is held before pause operation
+    this.ensureRecordingKeepaliveHeld();
+
+    try {
+      await RecorderManager.init();
+      const result = await RecorderManager.pause();
+      return result as unknown as JsonValue;
+    } finally {
+      // Sync keepalive with actual session status
+      this.syncRecordingKeepaliveHold();
+    }
+  }
+
+  private async handleResumeRecording(_params: JsonObject | undefined): Promise<JsonValue> {
+    // Ensure keepalive is held before resume operation
+    this.ensureRecordingKeepaliveHeld();
+
+    try {
+      await RecorderManager.init();
+      const result = await RecorderManager.resume();
+      return result as unknown as JsonValue;
+    } finally {
+      // Sync keepalive with actual session status
+      this.syncRecordingKeepaliveHold();
+    }
+  }
+
+  private async handleGetRecordingStatus(): Promise<JsonValue> {
+    const status = recordingSession.getStatus();
+    const session = recordingSession.getSession();
+
+    // Keepalive should mirror the recording session status
+    this.syncRecordingKeepaliveHold();
+
+    return {
+      success: true,
+      status,
+      sessionId: session.sessionId,
+      originTabId: session.originTabId,
+    } as unknown as JsonValue;
+  }
+
+  // ===== Recording Keepalive =====
+
+  /**
+   * Ensure the keepalive is held for recording (best-effort).
+   */
+  private ensureRecordingKeepaliveHeld(): void {
+    if (this.recordingKeepaliveRelease) return;
+    this.recordingKeepaliveRelease = acquireKeepalive('rr_v3:recording');
+  }
+
+  /**
+   * Release recording keepalive if held.
+   */
+  private releaseRecordingKeepalive(): void {
+    if (!this.recordingKeepaliveRelease) return;
+    try {
+      this.recordingKeepaliveRelease();
+    } catch {
+      // Ignore release errors (keepalive manager is best-effort)
+    } finally {
+      this.recordingKeepaliveRelease = null;
+    }
+  }
+
+  /**
+   * Synchronize keepalive hold with the current recording session status.
+   * @description Any non-idle status implies the background must stay alive.
+   */
+  private syncRecordingKeepaliveHold(): void {
+    const status = recordingSession.getStatus();
+    if (status === 'idle') {
+      this.releaseRecordingKeepalive();
+      return;
+    }
+    this.ensureRecordingKeepaliveHeld();
+  }
+
+  // ===== Broadcast Utilities =====
+
+  /**
+   * 广播 flows 变更通知
+   * @description 兼容 Popup/UI 对 RR_FLOWS_CHANGED 消息的监听
+   */
+  private broadcastFlowsChanged(): void {
+    try {
+      void chrome.runtime
+        .sendMessage({ type: BACKGROUND_MESSAGE_TYPES.RR_FLOWS_CHANGED })
+        .catch(() => {
+          // Ignore errors - no listeners is expected when UI is closed
+        });
+    } catch {
+      // Ignore errors (e.g., if chrome.runtime is not available)
+    }
   }
 }
 

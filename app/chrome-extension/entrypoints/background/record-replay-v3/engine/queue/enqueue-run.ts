@@ -49,6 +49,8 @@ export interface EnqueueRunInput {
   maxAttempts?: number;
   /** 传递给 Flow 的参数 */
   args?: JsonObject;
+  /** Target tab ID (optional). When set, the runner will prefer this tab over creating a new one. */
+  tabId?: number;
   /** 触发上下文 (由 TriggerManager 设置) */
   trigger?: TriggerFireContext;
   /** 调试选项 */
@@ -103,6 +105,21 @@ function validateInt(
 }
 
 /**
+ * Validate an optional Chrome tab ID.
+ * Chrome tab IDs are positive integers; we require a positive safe integer.
+ */
+function validateOptionalTabId(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error('tabId must be a finite number');
+  }
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error('tabId must be a positive safe integer');
+  }
+  return value;
+}
+
+/**
  * 计算 Run 在队列中的位置
  * @description 按调度顺序: priority DESC + createdAt ASC
  * @returns 1-based position, or -1 if run not found in queued items
@@ -153,6 +170,7 @@ export async function enqueueRun(
   // 参数校验
   const priority = validateInt(input.priority, 0, 'priority');
   const maxAttempts = validateInt(input.maxAttempts, 1, 'maxAttempts', { min: 1 });
+  const tabId = validateOptionalTabId(input.tabId);
 
   // 验证 Flow 存在
   const flow = await deps.storage.flows.get(flowId);
@@ -193,6 +211,7 @@ export async function enqueueRun(
   await deps.storage.queue.enqueue({
     id: runId,
     flowId,
+    tabId,
     priority,
     maxAttempts,
     args: input.args,

@@ -22,7 +22,10 @@ import type {
   ExecutableActionType,
   ValidationResult,
   Action,
+  ControlDirective as V2ControlDirective,
 } from '@/entrypoints/background/record-replay/actions/types';
+
+import type { ControlDirectiveV3 } from '../../domain/control';
 
 import type { JsonValue, JsonObject } from '../../domain/json';
 import { RR_ERROR_CODES, createRRError, type RRError, type RRErrorCode } from '../../domain/errors';
@@ -273,6 +276,107 @@ function toJsonRecord(value: unknown): Record<string, JsonValue> {
   return out;
 }
 
+/**
+ * Result of V2 control directive validation and mapping
+ */
+type ControlDirectiveMapResult =
+  | { ok: true; directive: ControlDirectiveV3 }
+  | { ok: false; error: RRError };
+
+/**
+ * Map V2 ControlDirective to V3 ControlDirectiveV3
+ * @description Maps V2 control directives (foreach/while/executeFlow) to V3 equivalents.
+ * Validates parameters early to provide clear error messages.
+ */
+function mapV2ControlDirectiveToV3(v2: V2ControlDirective): ControlDirectiveMapResult {
+  switch (v2.kind) {
+    case 'foreach': {
+      // V3 currently only supports concurrency=1 (sequential execution)
+      const concurrency = v2.concurrency ?? 1;
+      if (concurrency !== 1) {
+        return {
+          ok: false,
+          error: createRRError(
+            RR_ERROR_CODES.VALIDATION_ERROR,
+            `V3 does not support foreach concurrency > 1. Got concurrency=${concurrency}. ` +
+              `Please set concurrency to 1 or remove it.`,
+            { data: { kind: 'foreach', concurrency } },
+          ),
+        };
+      }
+
+      return {
+        ok: true,
+        directive: {
+          kind: 'foreach',
+          listVar: v2.listVar,
+          itemVar: v2.itemVar,
+          subflowId: v2.subflowId,
+        },
+      };
+    }
+
+    case 'while': {
+      // Validate maxIterations is a positive integer
+      const maxIterations = v2.maxIterations;
+      if (!Number.isInteger(maxIterations) || maxIterations <= 0) {
+        return {
+          ok: false,
+          error: createRRError(
+            RR_ERROR_CODES.VALIDATION_ERROR,
+            `while maxIterations must be a positive integer. Got: ${maxIterations}`,
+            { data: { kind: 'while', maxIterations } },
+          ),
+        };
+      }
+
+      return {
+        ok: true,
+        directive: {
+          kind: 'while',
+          condition: v2.condition,
+          subflowId: v2.subflowId,
+          maxIterations,
+        },
+      };
+    }
+
+    case 'executeFlow': {
+      // Validate flowId is present
+      if (!v2.flowId || typeof v2.flowId !== 'string') {
+        return {
+          ok: false,
+          error: createRRError(RR_ERROR_CODES.VALIDATION_ERROR, 'executeFlow requires a flowId', {
+            data: { kind: 'executeFlow' },
+          }),
+        };
+      }
+
+      return {
+        ok: true,
+        directive: {
+          kind: 'executeFlow',
+          flowId: v2.flowId,
+          args: v2.args as JsonObject | undefined,
+          inline: v2.inline,
+        },
+      };
+    }
+
+    default: {
+      // Exhaustiveness check - should never reach here
+      const _exhaustive: never = v2;
+      return {
+        ok: false,
+        error: createRRError(
+          RR_ERROR_CODES.VALIDATION_ERROR,
+          `Unknown V2 control directive kind: ${(_exhaustive as { kind: string }).kind}`,
+        ),
+      };
+    }
+  }
+}
+
 // ==================== Main Adapter ====================
 
 /**
@@ -372,16 +476,14 @@ export function adaptV2ActionHandlerToV3NodeDefinition<T extends ExecutableActio
         };
       }
 
-      // V3 does not support V2 scheduler control directives (foreach/while).
+      // Map V2 control directive to V3 format (foreach/while are now supported)
+      let v3Control: ControlDirectiveV3 | undefined;
       if (result.control) {
-        return {
-          status: 'failed',
-          error: createRRError(
-            RR_ERROR_CODES.UNSUPPORTED_NODE,
-            `V2 control directive "${result.control.kind}" is not supported by the V3 runner`,
-            { data: safeJsonValue(result.control) },
-          ),
-        };
+        const mapResult = mapV2ControlDirectiveToV3(result.control);
+        if (!mapResult.ok) {
+          return { status: 'failed', error: mapResult.error };
+        }
+        v3Control = mapResult.directive;
       }
 
       // Persist cross-node context changes via internal vars.
@@ -408,6 +510,7 @@ export function adaptV2ActionHandlerToV3NodeDefinition<T extends ExecutableActio
         ...(result.nextLabel ? { next: ctx.chooseNext(result.nextLabel) } : {}),
         ...(outputs ? { outputs } : {}),
         ...(varsPatch.length > 0 ? { varsPatch } : {}),
+        ...(v3Control ? { control: v3Control } : {}),
       };
     },
   };

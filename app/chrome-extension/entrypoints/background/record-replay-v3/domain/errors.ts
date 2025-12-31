@@ -46,6 +46,12 @@ export const RR_ERROR_CODES = {
   RUN_CANCELED: 'RUN_CANCELED',
   /** Run 被暂停 */
   RUN_PAUSED: 'RUN_PAUSED',
+  /** 控制流调用栈溢出 */
+  CONTROL_STACK_OVERFLOW: 'CONTROL_STACK_OVERFLOW',
+  /** Flow 循环调用检测 */
+  FLOW_CYCLE: 'FLOW_CYCLE',
+  /** Flow 未找到 */
+  FLOW_NOT_FOUND: 'FLOW_NOT_FOUND',
 
   // ===== 内部错误 =====
   /** 内部错误 */

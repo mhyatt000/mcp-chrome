@@ -3,11 +3,11 @@
  * @description 将 V2 格式数据转换为 V3 格式，支持双向转换
  */
 
-import type { FlowV3, NodeV3, EdgeV3, FlowBinding } from '../../domain/flow';
+import type { FlowV3, NodeV3, EdgeV3, FlowBinding, SubflowV3 } from '../../domain/flow';
 import type { TriggerSpec } from '../../domain/triggers';
 import type { VariableDefinition } from '../../domain/variables';
-import type { NodeId, FlowId, EdgeId } from '../../domain/ids';
-import type { ISODateTimeString } from '../../domain/json';
+import type { NodeId, FlowId, EdgeId, SubflowId } from '../../domain/ids';
+import type { ISODateTimeString, JsonObject, JsonValue } from '../../domain/json';
 import { FLOW_SCHEMA_VERSION } from '../../domain/flow';
 
 // ==================== V2 Types (imported from record-replay) ====================
@@ -98,25 +98,6 @@ export function convertFlowV2ToV3(v2Flow: V2Flow): ConversionResult<FlowV3> {
     errors.push('V2 Flow has no nodes');
   }
 
-  // 2. 检查不支持的特性
-  if (v2Flow.subflows && Object.keys(v2Flow.subflows).length > 0) {
-    errors.push(
-      'V3 does not support subflows yet. Flow contains subflows: ' +
-        Object.keys(v2Flow.subflows).join(', '),
-    );
-  }
-
-  // 检查 foreach/while 节点
-  const unsupportedNodes = (v2Flow.nodes || []).filter(
-    (n) => n.type === 'foreach' || n.type === 'while',
-  );
-  if (unsupportedNodes.length > 0) {
-    errors.push(
-      'V3 does not support foreach/while nodes yet. Found: ' +
-        unsupportedNodes.map((n) => `${n.id} (${n.type})`).join(', '),
-    );
-  }
-
   // 如果有致命错误，直接返回
   if (errors.length > 0) {
     return { success: false, errors, warnings };
@@ -133,15 +114,29 @@ export function convertFlowV2ToV3(v2Flow: V2Flow): ConversionResult<FlowV3> {
     }
   }
 
-  // 4. 转换边
+  // Build node ID set for edge validation
+  const nodeIds = new Set<string>(nodes.map((n) => n.id));
+
+  // 4. 转换边 (filter edges pointing to/from non-existent nodes)
   const edges: EdgeV3[] = [];
   for (const v2Edge of v2Flow.edges || []) {
     const edge = convertEdgeV2ToV3(v2Edge);
-    if (edge) {
-      edges.push(edge);
-    } else {
+    if (!edge) {
       warnings.push(`Skipped invalid edge: ${v2Edge.id}`);
+      continue;
     }
+
+    // Skip edges pointing to/from non-existent nodes
+    if (!nodeIds.has(edge.from)) {
+      warnings.push(`Skipped edge "${v2Edge.id}": source node "${edge.from}" does not exist`);
+      continue;
+    }
+    if (!nodeIds.has(edge.to)) {
+      warnings.push(`Skipped edge "${v2Edge.id}": target node "${edge.to}" does not exist`);
+      continue;
+    }
+
+    edges.push(edge);
   }
 
   // 5. 计算 entryNodeId
@@ -159,7 +154,10 @@ export function convertFlowV2ToV3(v2Flow: V2Flow): ConversionResult<FlowV3> {
   // 7. 转换元数据
   const meta = convertMetaV2ToV3(v2Flow.meta);
 
-  // 8. 构建 V3 Flow
+  // 8. 转换 subflows
+  const subflows = convertSubflowsV2ToV3(v2Flow.subflows, warnings);
+
+  // 9. 构建 V3 Flow
   const now = new Date().toISOString() as ISODateTimeString;
   const v3Flow: FlowV3 = {
     schemaVersion: FLOW_SCHEMA_VERSION,
@@ -182,6 +180,9 @@ export function convertFlowV2ToV3(v2Flow: V2Flow): ConversionResult<FlowV3> {
   if (meta) {
     v3Flow.meta = meta;
   }
+  if (subflows && Object.keys(subflows).length > 0) {
+    v3Flow.subflows = subflows;
+  }
 
   return { success: true, data: v3Flow, errors, warnings };
 }
@@ -197,7 +198,7 @@ function convertNodeV2ToV3(v2Node: V2Node): NodeV3 | null {
   const node: NodeV3 = {
     id: v2Node.id as NodeId,
     kind: v2Node.type, // V2 type -> V3 kind
-    config: (v2Node.config as Record<string, unknown>) || {},
+    config: (v2Node.config ?? {}) as JsonObject,
   };
 
   // 可选字段
@@ -368,7 +369,7 @@ function convertVariablesV2ToV3(v2Variables: V2VariableDef[]): VariableDefinitio
         variable.sensitive = v.sensitive;
       }
       if (v.default !== undefined) {
-        variable.default = v.default;
+        variable.default = v.default as JsonValue;
       }
       if (v.rules?.required) {
         variable.required = v.rules.required;
@@ -403,6 +404,79 @@ function convertMetaV2ToV3(v2Meta: V2Flow['meta']): FlowV3['meta'] | undefined {
   }
 
   return meta;
+}
+
+/**
+ * 转换 V2 subflows 为 V3 subflows
+ */
+function convertSubflowsV2ToV3(
+  v2Subflows: V2Flow['subflows'],
+  warnings: string[],
+): Record<SubflowId, SubflowV3> | undefined {
+  if (!v2Subflows || Object.keys(v2Subflows).length === 0) {
+    return undefined;
+  }
+
+  const subflows: Record<SubflowId, SubflowV3> = {};
+
+  for (const [id, v2Subflow] of Object.entries(v2Subflows)) {
+    // 转换 subflow 的节点
+    const nodes: NodeV3[] = [];
+    for (const v2Node of v2Subflow.nodes || []) {
+      const node = convertNodeV2ToV3(v2Node);
+      if (node) {
+        nodes.push(node);
+      } else {
+        warnings.push(`Skipped invalid node in subflow "${id}": ${v2Node.id}`);
+      }
+    }
+
+    // Build node ID set for edge validation
+    const nodeIds = new Set<string>(nodes.map((n) => n.id));
+
+    // 转换 subflow 的边 (filter edges pointing to/from non-existent nodes)
+    const edges: EdgeV3[] = [];
+    for (const v2Edge of v2Subflow.edges || []) {
+      const edge = convertEdgeV2ToV3(v2Edge);
+      if (!edge) {
+        warnings.push(`Skipped invalid edge in subflow "${id}": ${v2Edge.id}`);
+        continue;
+      }
+
+      // Skip edges pointing to/from non-existent nodes
+      if (!nodeIds.has(edge.from)) {
+        warnings.push(
+          `Skipped edge "${v2Edge.id}" in subflow "${id}": source node "${edge.from}" does not exist`,
+        );
+        continue;
+      }
+      if (!nodeIds.has(edge.to)) {
+        warnings.push(
+          `Skipped edge "${v2Edge.id}" in subflow "${id}": target node "${edge.to}" does not exist`,
+        );
+        continue;
+      }
+
+      edges.push(edge);
+    }
+
+    // 计算 subflow 的 entryNodeId
+    const entryResult = findEntryNodeId(nodes, edges);
+    warnings.push(...entryResult.warnings.map((w) => `[subflow "${id}"] ${w}`));
+
+    if (!entryResult.nodeId) {
+      warnings.push(`Subflow "${id}" has no valid entry node, skipping`);
+      continue;
+    }
+
+    subflows[id as SubflowId] = {
+      entryNodeId: entryResult.nodeId,
+      nodes,
+      edges,
+    };
+  }
+
+  return Object.keys(subflows).length > 0 ? subflows : undefined;
 }
 
 // ==================== V3 -> V2 Conversion ====================
@@ -460,7 +534,10 @@ export function convertFlowV3ToV2(v3Flow: FlowV3): ConversionResult<V2Flow> {
     }));
   }
 
-  // 5. 构建 V2 Flow
+  // 5. 转换 subflows
+  const subflows = convertSubflowsV3ToV2(v3Flow.subflows);
+
+  // 6. 构建 V2 Flow
   const v2Flow: V2Flow = {
     id: v3Flow.id,
     name: v3Flow.name,
@@ -470,50 +547,69 @@ export function convertFlowV3ToV2(v3Flow: FlowV3): ConversionResult<V2Flow> {
     variables: variables.length > 0 ? variables : undefined,
     nodes,
     edges,
+    subflows: subflows && Object.keys(subflows).length > 0 ? subflows : undefined,
   };
 
   return { success: true, data: v2Flow, errors, warnings };
 }
 
-// ==================== Trigger Conversion ====================
+/**
+ * 转换 V3 subflows 为 V2 subflows
+ */
+function convertSubflowsV3ToV2(
+  v3Subflows: FlowV3['subflows'],
+): Record<string, { nodes: V2Node[]; edges: V2Edge[] }> | undefined {
+  if (!v3Subflows || Object.keys(v3Subflows).length === 0) {
+    return undefined;
+  }
 
-/** V2 Trigger 定义 */
-interface V2Trigger {
-  id: string;
-  type: 'url' | 'command' | 'manual' | 'schedule' | 'element';
-  flowId: string;
-  enabled?: boolean;
-  match?: Array<{ kind: string; value: string }>;
-  title?: string;
-  commandKey?: string;
-  selector?: string;
-  appear?: boolean;
-  once?: boolean;
-  debounceMs?: number;
-  schedule?: {
-    type: 'interval' | 'daily' | 'weekly';
-    intervalMs?: number;
-    time?: string;
-    days?: number[];
-  };
+  const subflows: Record<string, { nodes: V2Node[]; edges: V2Edge[] }> = {};
+
+  for (const [id, v3Subflow] of Object.entries(v3Subflows)) {
+    const nodes: V2Node[] = v3Subflow.nodes.map((n) => ({
+      id: n.id,
+      type: n.kind,
+      name: n.name,
+      disabled: n.disabled,
+      config: n.config as Record<string, unknown>,
+      ui: n.ui,
+    }));
+
+    const edges: V2Edge[] = v3Subflow.edges.map((e) => ({
+      id: e.id,
+      from: e.from,
+      to: e.to,
+      label: e.label,
+    }));
+
+    subflows[id] = { nodes, edges };
+  }
+
+  return subflows;
 }
 
+// ==================== Trigger Conversion ====================
+
+import type { FlowTrigger } from '@/entrypoints/background/record-replay/trigger-store';
+import type { FlowSchedule } from '@/entrypoints/background/record-replay/flow-store';
+import type { TriggerId } from '../../domain/ids';
+import type { UrlMatchRule } from '../../domain/triggers';
+
 /**
- * 将 V2 Trigger 转换为 V3 TriggerSpec
- * @param v2Trigger V2 格式的 Trigger
- * @returns 转换结果
+ * 将 V2 FlowTrigger 转换为 V3 TriggerSpec
+ * 支持的 V2 类型: url, command, contextMenu, dom
  */
-export function convertTriggerV2ToV3(v2Trigger: V2Trigger): ConversionResult<TriggerSpec> {
+export function convertTriggerV2ToV3(v2Trigger: FlowTrigger): ConversionResult<TriggerSpec> {
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  if (!v2Trigger.id) {
+  if (!v2Trigger?.id) {
     errors.push('V2 Trigger missing required field: id');
   }
-  if (!v2Trigger.flowId) {
+  if (!v2Trigger?.flowId) {
     errors.push('V2 Trigger missing required field: flowId');
   }
-  if (!v2Trigger.type) {
+  if (!v2Trigger?.type) {
     errors.push('V2 Trigger missing required field: type');
   }
 
@@ -521,110 +617,182 @@ export function convertTriggerV2ToV3(v2Trigger: V2Trigger): ConversionResult<Tri
     return { success: false, errors, warnings };
   }
 
-  // 根据 type 构建不同的 TriggerSpec
   let trigger: TriggerSpec;
 
   switch (v2Trigger.type) {
-    case 'manual':
+    case 'url': {
+      // V2 url match: Array<{ kind: 'url' | 'domain' | 'path'; value: string }>
+      // V3 url match: UrlMatchRule[]
+      const match: UrlMatchRule[] = (v2Trigger.match || []).map((m) => ({
+        kind: m.kind,
+        value: m.value,
+      }));
       trigger = {
-        id: v2Trigger.id,
-        kind: 'manual',
-        flowId: v2Trigger.flowId as FlowId,
-        enabled: v2Trigger.enabled ?? true,
-      };
-      break;
-
-    case 'command':
-      trigger = {
-        id: v2Trigger.id,
-        kind: 'command',
-        flowId: v2Trigger.flowId as FlowId,
-        enabled: v2Trigger.enabled ?? true,
-        command: v2Trigger.commandKey || 'run_workflow',
-      };
-      break;
-
-    case 'url':
-      trigger = {
-        id: v2Trigger.id,
+        id: v2Trigger.id as TriggerId,
         kind: 'url',
         flowId: v2Trigger.flowId as FlowId,
-        enabled: v2Trigger.enabled ?? true,
-        patterns: (v2Trigger.match || []).map((m) => m.value),
-      };
-      break;
-
-    case 'schedule': { // 将 V2 schedule 转换为 cron 表达式
-      const cron = convertScheduleToCron(v2Trigger.schedule);
-      if (!cron) {
-        errors.push('Could not convert V2 schedule to cron expression');
-        return { success: false, errors, warnings };
-      }
-      trigger = {
-        id: v2Trigger.id,
-        kind: 'cron',
-        flowId: v2Trigger.flowId as FlowId,
-        enabled: v2Trigger.enabled ?? true,
-        cron,
+        enabled: v2Trigger.enabled,
+        args: v2Trigger.args,
+        match,
       };
       break;
     }
 
-    case 'element':
-      warnings.push('Element trigger is not fully supported in V3, converting to manual');
+    case 'command':
       trigger = {
-        id: v2Trigger.id,
-        kind: 'manual',
+        id: v2Trigger.id as TriggerId,
+        kind: 'command',
         flowId: v2Trigger.flowId as FlowId,
-        enabled: v2Trigger.enabled ?? true,
+        enabled: v2Trigger.enabled,
+        args: v2Trigger.args,
+        commandKey: v2Trigger.commandKey,
+      };
+      break;
+
+    case 'contextMenu':
+      trigger = {
+        id: v2Trigger.id as TriggerId,
+        kind: 'contextMenu',
+        flowId: v2Trigger.flowId as FlowId,
+        enabled: v2Trigger.enabled,
+        args: v2Trigger.args,
+        title: v2Trigger.title,
+        contexts: v2Trigger.contexts as ReadonlyArray<string> | undefined,
+      };
+      break;
+
+    case 'dom':
+      trigger = {
+        id: v2Trigger.id as TriggerId,
+        kind: 'dom',
+        flowId: v2Trigger.flowId as FlowId,
+        enabled: v2Trigger.enabled,
+        args: v2Trigger.args,
+        selector: v2Trigger.selector,
+        appear: v2Trigger.appear,
+        once: v2Trigger.once,
+        debounceMs: v2Trigger.debounceMs,
       };
       break;
 
     default:
-      errors.push(`Unknown V2 trigger type: ${v2Trigger.type}`);
+      errors.push(`Unknown V2 trigger type: ${(v2Trigger as { type: string }).type}`);
       return { success: false, errors, warnings };
   }
 
   return { success: true, data: trigger, errors, warnings };
 }
 
-/**
- * 将 V2 schedule 配置转换为 cron 表达式
- */
-function convertScheduleToCron(schedule: V2Trigger['schedule']): string | null {
-  if (!schedule) return null;
+// ==================== Schedule Conversion ====================
 
-  switch (schedule.type) {
-    case 'interval': { // 将间隔转换为近似 cron（每 N 分钟）
-      const intervalMinutes = Math.max(1, Math.round((schedule.intervalMs || 60000) / 60000));
-      if (intervalMinutes < 60) {
-        return `*/${intervalMinutes} * * * *`;
-      } else {
-        const hours = Math.round(intervalMinutes / 60);
-        return `0 */${hours} * * *`;
+/**
+ * 将 V2 FlowSchedule 转换为 V3 TriggerSpec
+ * V2 schedule types: once, interval, daily -> V3: once, interval, cron
+ */
+export function convertScheduleV2ToV3(
+  v2Schedule: FlowSchedule,
+  options?: { idPrefix?: string; nowMs?: number },
+): ConversionResult<TriggerSpec> {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  const idPrefix = options?.idPrefix ?? 'rr_v2_schedule_';
+  const nowMs = options?.nowMs ?? Date.now();
+
+  if (!v2Schedule?.id) {
+    errors.push('V2 Schedule missing required field: id');
+  }
+  if (!v2Schedule?.flowId) {
+    errors.push('V2 Schedule missing required field: flowId');
+  }
+  if (!v2Schedule?.type) {
+    errors.push('V2 Schedule missing required field: type');
+  }
+
+  if (errors.length > 0) {
+    return { success: false, errors, warnings };
+  }
+
+  // 生成带前缀的 ID，避免与现有 trigger ID 冲突
+  const id = `${idPrefix}${v2Schedule.id}` as TriggerId;
+
+  let trigger: TriggerSpec;
+
+  switch (v2Schedule.type) {
+    case 'interval': {
+      // V2 when: minutes as string
+      const minutes = Number(v2Schedule.when);
+      if (!Number.isFinite(minutes) || minutes < 1) {
+        errors.push(`Invalid interval minutes: "${v2Schedule.when}"`);
+        return { success: false, errors, warnings };
       }
+      trigger = {
+        id,
+        kind: 'interval',
+        flowId: v2Schedule.flowId as FlowId,
+        enabled: v2Schedule.enabled,
+        args: v2Schedule.args,
+        periodMinutes: Math.floor(minutes),
+      };
+      break;
     }
 
-    case 'daily':
-      // 每天指定时间
-      if (schedule.time) {
-        const [hour, minute] = schedule.time.split(':').map(Number);
-        return `${minute || 0} ${hour || 0} * * *`;
+    case 'once': {
+      // V2 when: ISO string
+      const whenMs = Date.parse(v2Schedule.when);
+      if (!Number.isFinite(whenMs)) {
+        errors.push(`Invalid once ISO datetime: "${v2Schedule.when}"`);
+        return { success: false, errors, warnings };
       }
-      return '0 0 * * *'; // 默认每天 0:00
+      // 如果时间已过，迁移为 disabled
+      const enabled = v2Schedule.enabled && whenMs > nowMs;
+      if (v2Schedule.enabled && !enabled) {
+        warnings.push('Once schedule time is in the past; migrated as disabled');
+      }
+      trigger = {
+        id,
+        kind: 'once',
+        flowId: v2Schedule.flowId as FlowId,
+        enabled,
+        args: v2Schedule.args,
+        whenMs,
+      };
+      break;
+    }
 
-    case 'weekly': { // 每周指定天数和时间
-      const days = (schedule.days || [0]).join(',');
-      if (schedule.time) {
-        const [hour, minute] = schedule.time.split(':').map(Number);
-        return `${minute || 0} ${hour || 0} * * ${days}`;
+    case 'daily': {
+      // V2 when: "HH:mm" string
+      const raw = String(v2Schedule.when ?? '').trim();
+      const [hhRaw, mmRaw] = raw.split(':');
+      const hour = Number(hhRaw);
+      const minute = Number(mmRaw ?? 0);
+      if (!Number.isFinite(hour) || hour < 0 || hour > 23) {
+        errors.push(`Invalid daily time: "${v2Schedule.when}" (invalid hour)`);
+        return { success: false, errors, warnings };
       }
-      return `0 0 * * ${days}`;
+      if (!Number.isFinite(minute) || minute < 0 || minute > 59) {
+        errors.push(`Invalid daily time: "${v2Schedule.when}" (invalid minute)`);
+        return { success: false, errors, warnings };
+      }
+      // 转换为 cron: "minute hour * * *"
+      const cron = `${minute} ${hour} * * *`;
+      trigger = {
+        id,
+        kind: 'cron',
+        flowId: v2Schedule.flowId as FlowId,
+        enabled: v2Schedule.enabled,
+        args: v2Schedule.args,
+        cron,
+      };
+      break;
     }
 
     default:
-      return null;
+      errors.push(`Unknown V2 schedule type: ${(v2Schedule as { type: string }).type}`);
+      return { success: false, errors, warnings };
   }
+
+  return { success: true, data: trigger, errors, warnings };
 }
 
 // ==================== Converter Interface ====================
@@ -637,6 +805,11 @@ export interface V2ToV3Converter {
   convertFlow(v2Flow: unknown): FlowV3;
   /** 转换 Trigger */
   convertTrigger(v2Trigger: unknown): TriggerSpec;
+  /** 转换 Schedule -> Trigger */
+  convertSchedule(
+    v2Schedule: unknown,
+    options?: { idPrefix?: string; nowMs?: number },
+  ): TriggerSpec;
 }
 
 /**
@@ -653,9 +826,20 @@ export function createV2ToV3Converter(): V2ToV3Converter {
     },
 
     convertTrigger(v2Trigger: unknown): TriggerSpec {
-      const result = convertTriggerV2ToV3(v2Trigger as V2Trigger);
+      const result = convertTriggerV2ToV3(v2Trigger as FlowTrigger);
       if (!result.success || !result.data) {
         throw new Error(`Trigger conversion failed: ${result.errors.join('; ')}`);
+      }
+      return result.data;
+    },
+
+    convertSchedule(
+      v2Schedule: unknown,
+      options?: { idPrefix?: string; nowMs?: number },
+    ): TriggerSpec {
+      const result = convertScheduleV2ToV3(v2Schedule as FlowSchedule, options);
+      if (!result.success || !result.data) {
+        throw new Error(`Schedule conversion failed: ${result.errors.join('; ')}`);
       }
       return result.data;
     },

@@ -5,21 +5,18 @@ import {
 } from './semantic-similarity';
 import { initStorageManagerListener } from './storage-manager';
 import { cleanupModelCache } from '@/utils/semantic-similarity-engine';
-import { initRecordReplayListeners } from './record-replay';
 import { initElementMarkerListeners } from './element-marker';
 import { initWebEditorListeners } from './web-editor';
 import { initQuickPanelAgentHandler } from './quick-panel/agent-handler';
+import { initQuickPanelBookmarksHandler } from './quick-panel/bookmarks-handler';
 import { initQuickPanelCommands } from './quick-panel/commands';
+import { initQuickPanelHistoryHandler } from './quick-panel/history-handler';
+import { initQuickPanelPageCommandsHandler } from './quick-panel/page-commands-handler';
 import { initQuickPanelTabsHandler } from './quick-panel/tabs-handler';
+import { initQuickPanelUsageHistoryHandler } from './quick-panel/usage-history-handler';
 
-// Record-Replay V3 (feature flag)
+// Record-Replay V3
 import { bootstrapV3 } from './record-replay-v3/bootstrap';
-
-/**
- * Feature flag for RR-V3
- * Set to true to enable the new Record-Replay V3 engine
- */
-const ENABLE_RR_V3 = true;
 
 /**
  * Background script entry point
@@ -40,19 +37,15 @@ export default defineBackground(() => {
   initNativeHostListener();
   initSemanticSimilarityListener();
   initStorageManagerListener();
-  // Record & Replay V1/V2 listeners
-  initRecordReplayListeners();
 
-  // Record & Replay V3 (new engine)
-  if (ENABLE_RR_V3) {
-    bootstrapV3()
-      .then((runtime) => {
-        console.log(`[RR-V3] Bootstrap complete, ownerId: ${runtime.ownerId}`);
-      })
-      .catch((error) => {
-        console.error('[RR-V3] Bootstrap failed:', error);
-      });
-  }
+  // Record & Replay V3
+  bootstrapV3()
+    .then((runtime) => {
+      console.log(`[RR-V3] Bootstrap complete, ownerId: ${runtime.ownerId}`);
+    })
+    .catch((error) => {
+      console.error('[RR-V3] Bootstrap failed:', error);
+    });
 
   // Element marker: context menu + CRUD listeners
   initElementMarkerListeners();
@@ -62,6 +55,14 @@ export default defineBackground(() => {
   initQuickPanelAgentHandler();
   // Quick Panel: tabs search bridge for content script UI
   initQuickPanelTabsHandler();
+  // Quick Panel: bookmarks search bridge
+  initQuickPanelBookmarksHandler();
+  // Quick Panel: history search bridge
+  initQuickPanelHistoryHandler();
+  // Quick Panel: usage history (frecency) store - IndexedDB backend
+  initQuickPanelUsageHistoryHandler();
+  // Quick Panel: navigation and page commands
+  initQuickPanelPageCommandsHandler();
   // Quick Panel: keyboard shortcut handler
   initQuickPanelCommands();
 

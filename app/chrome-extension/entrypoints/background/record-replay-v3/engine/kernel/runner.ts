@@ -3,10 +3,12 @@
  * @description 定义和实现单个 Run 的顺序执行器
  */
 
-import type { NodeId, RunId } from '../../domain/ids';
+import type { NodeId, RunId, SubflowId } from '../../domain/ids';
 import { EDGE_LABELS } from '../../domain/ids';
-import type { FlowV3, NodeV3 } from '../../domain/flow';
+import type { FlowV3, NodeV3, GraphV3 } from '../../domain/flow';
 import { findNodeById } from '../../domain/flow';
+import type { ControlDirectiveV3, ConditionV3 } from '../../domain/control';
+import { DEFAULT_WHILE_MAX_ITERATIONS, MAX_CONTROL_STACK_DEPTH } from '../../domain/control';
 import type {
   PauseReason,
   RunEvent,
@@ -130,6 +132,12 @@ function createDeferred<T>(): Deferred<T> {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function deepClone<T>(value: T): T {
+  const sc = (globalThis as unknown as { structuredClone?: <U>(v: U) => U }).structuredClone;
+  if (typeof sc === 'function') return sc(value);
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function errorMessage(err: unknown): string {
@@ -280,6 +288,160 @@ type NodeRunResult =
   | { terminal: 'canceled' };
 
 /**
+ * Graph 执行结果
+ */
+type GraphRunResult =
+  | { status: 'succeeded' }
+  | { status: 'failed'; error: RRError; nodeId?: NodeId }
+  | { status: 'canceled' };
+
+/**
+ * Control directive 执行结果
+ */
+type ControlDirectiveResult =
+  | { status: 'succeeded' }
+  | { status: 'canceled' }
+  | { status: 'failed'; error: RRError };
+
+// ==================== Condition Evaluation ====================
+
+/**
+ * 解析变量引用
+ * @description 从变量表中解析值，支持嵌套路径
+ */
+function resolveVariableValue(
+  value: unknown,
+  vars: Record<string, JsonValue>,
+): { ok: true; value: JsonValue } | { ok: false; error: string } {
+  // 简单值直接返回
+  if (value === null || value === undefined) {
+    return { ok: true, value: null };
+  }
+
+  if (typeof value !== 'object') {
+    return { ok: true, value: value as JsonValue };
+  }
+
+  // 变量引用
+  const obj = value as Record<string, unknown>;
+  if ('ref' in obj && typeof obj.ref === 'object' && obj.ref !== null) {
+    const ref = obj.ref as { name?: string; path?: (string | number)[] };
+    if (typeof ref.name === 'string') {
+      let resolved: JsonValue | undefined = vars[ref.name];
+      if (resolved !== undefined && Array.isArray(ref.path)) {
+        for (const key of ref.path) {
+          if (resolved === null || resolved === undefined) break;
+          if (typeof resolved === 'object' && resolved !== null) {
+            resolved = (resolved as Record<string, JsonValue>)[String(key)];
+          } else {
+            resolved = undefined;
+            break;
+          }
+        }
+      }
+      if (resolved !== undefined) return { ok: true, value: resolved };
+      if ('default' in obj) return { ok: true, value: (obj.default ?? null) as JsonValue };
+      return { ok: true, value: null };
+    }
+  }
+
+  // 表达式（不支持）
+  if ('expr' in obj) {
+    if ('default' in obj) return { ok: true, value: (obj.default ?? null) as JsonValue };
+    return { ok: false, error: 'Expression value is not supported by the default resolver' };
+  }
+
+  // 普通对象
+  return { ok: true, value: value as JsonValue };
+}
+
+/**
+ * 求值条件表达式
+ * @description 复用 V2 的条件求值逻辑
+ */
+function evaluateConditionV3(condition: ConditionV3, vars: Record<string, JsonValue>): boolean {
+  switch (condition.kind) {
+    case 'expr':
+      // Expression evaluation not supported
+      return false;
+
+    case 'compare': {
+      const leftResult = resolveVariableValue(condition.left, vars);
+      const rightResult = resolveVariableValue(condition.right, vars);
+      if (!leftResult.ok || !rightResult.ok) return false;
+
+      const left = leftResult.value;
+      const right = rightResult.value;
+
+      switch (condition.op) {
+        case 'eq':
+          return left === right;
+        case 'eqi':
+          return String(left).toLowerCase() === String(right).toLowerCase();
+        case 'neq':
+          return left !== right;
+        case 'gt':
+          return Number(left) > Number(right);
+        case 'gte':
+          return Number(left) >= Number(right);
+        case 'lt':
+          return Number(left) < Number(right);
+        case 'lte':
+          return Number(left) <= Number(right);
+        case 'contains':
+          return String(left).includes(String(right));
+        case 'containsI':
+          return String(left).toLowerCase().includes(String(right).toLowerCase());
+        case 'notContains':
+          return !String(left).includes(String(right));
+        case 'notContainsI':
+          return !String(left).toLowerCase().includes(String(right).toLowerCase());
+        case 'startsWith':
+          return String(left).startsWith(String(right));
+        case 'endsWith':
+          return String(left).endsWith(String(right));
+        case 'regex': {
+          try {
+            const regex = new RegExp(String(right));
+            return regex.test(String(left));
+          } catch {
+            return false;
+          }
+        }
+        default:
+          return false;
+      }
+    }
+
+    case 'truthy': {
+      const result = resolveVariableValue(condition.value, vars);
+      if (!result.ok) return false;
+      return Boolean(result.value);
+    }
+
+    case 'falsy': {
+      const result = resolveVariableValue(condition.value, vars);
+      if (!result.ok) return true;
+      return !result.value;
+    }
+
+    case 'not':
+      return !evaluateConditionV3(condition.condition, vars);
+
+    case 'and':
+      return condition.conditions.every((c) => evaluateConditionV3(c, vars));
+
+    case 'or':
+      return condition.conditions.some((c) => evaluateConditionV3(c, vars));
+
+    default:
+      return false;
+  }
+}
+
+// ==================== Runner Implementation ====================
+
+/**
  * Storage-backed RunRunner implementation
  */
 class StorageBackedRunRunner implements RunRunner {
@@ -295,6 +457,10 @@ class StorageBackedRunRunner implements RunRunner {
   private outputs: JsonObject = {};
   private cancelReason: string | undefined;
   private pauseWaiter: Deferred<void> | null = null;
+  /** 控制流调用栈深度（用于防止无限递归） */
+  private controlDepth = 0;
+  /** Flow 调用栈（用于 executeFlow 循环检测） */
+  private flowCallStack: string[] = [];
 
   constructor(runId: RunId, config: RunnerConfig, env: RunnerEnv) {
     this.runId = runId;
@@ -311,6 +477,8 @@ class StorageBackedRunRunner implements RunRunner {
     };
 
     this.breakpoints = getBreakpointRegistry().getOrCreate(runId, config.debug?.breakpoints);
+    // Initialize flow call stack with root flow ID
+    this.flowCallStack = [config.flow.id];
   }
 
   onEvent(listener: (event: RunEvent) => void): Unsubscribe {
@@ -506,28 +674,56 @@ class StorageBackedRunRunner implements RunRunner {
       this.requestPause({ kind: 'policy', nodeId: startNodeId, reason: 'pauseOnStart' });
     }
 
-    // Main execution loop
+    // Execute main graph (flowContext = flow itself for the main graph)
+    const graphResult = await this.runGraph(flow, flow, startNodeId);
+
+    if (graphResult.status === 'canceled') {
+      return this.finishCanceled(startedAt);
+    }
+    if (graphResult.status === 'failed') {
+      return this.finishFailed(startedAt, graphResult.error, graphResult.nodeId);
+    }
+
+    return this.finishSucceeded(startedAt);
+  }
+
+  /**
+   * 执行图（主图或 subflow）
+   * @param flowContext Flow 上下文（提供 policy/subflows/variables 等定义，用于 executeFlow 时可能是不同的 Flow）
+   * @param graph 要执行的图（可以是 flowContext 本身或其 subflow）
+   * @param startNodeId 起始节点 ID
+   * @returns 执行结果
+   */
+  private async runGraph(
+    flowContext: FlowV3,
+    graph: GraphV3,
+    startNodeId: NodeId,
+  ): Promise<GraphRunResult> {
     let currentNodeId: NodeId | null = startNodeId;
+
     while (currentNodeId) {
       this.state.currentNodeId = currentNodeId;
 
-      // Only update currentNodeId, not status (to preserve paused state)
-      const nodeIdToUpdate = currentNodeId; // Capture for closure
+      // Update currentNodeId in storage
+      const nodeIdToUpdate = currentNodeId;
       await this.queue.run(() =>
         this.env.storage.runs.patch(this.runId, { currentNodeId: nodeIdToUpdate }),
       );
 
-      if (this.state.canceled) break;
+      if (this.state.canceled) return { status: 'canceled' };
       await this.waitIfPaused();
-      if (this.state.canceled) break;
+      if (this.state.canceled) return { status: 'canceled' };
 
-      const node = findNodeById(flow, currentNodeId);
+      const node = findNodeById(graph, currentNodeId);
       if (!node) {
-        const error = createRRError(
-          RR_ERROR_CODES.DAG_INVALID,
-          `Node "${currentNodeId}" not found in flow`,
-        );
-        return this.finishFailed(startedAt, error, currentNodeId);
+        return {
+          status: 'failed',
+          nodeId: currentNodeId,
+          error: createRRError(
+            RR_ERROR_CODES.DAG_INVALID,
+            `Node "${currentNodeId}" not found in graph`,
+          ),
+        };
       }
 
       // Skip disabled nodes
@@ -540,7 +736,7 @@ class StorageBackedRunRunner implements RunRunner {
             reason: 'disabled',
           } as RunEventInput),
         );
-        currentNodeId = findNextNode(flow, node.id);
+        currentNodeId = findNextNode(graph, node.id);
         continue;
       }
 
@@ -551,14 +747,12 @@ class StorageBackedRunRunner implements RunRunner {
             ? { kind: 'step', nodeId: node.id }
             : { kind: 'breakpoint', nodeId: node.id };
 
-        // Clear step mode after hitting (to avoid infinite pause loop)
         if (this.breakpoints.getStepMode() === 'stepOver') {
           this.breakpoints.setStepMode('none');
         }
 
         this.requestPause(reason);
         await this.waitIfPaused();
-        // After resume, proceed to execute the node (don't continue loop)
       }
 
       // Emit node.queued
@@ -572,26 +766,31 @@ class StorageBackedRunRunner implements RunRunner {
 
       // Execute node
       const nodeStartAt = this.env.now();
-      const next = await this.runNode(flow, node, nodeStartAt);
+      const next = await this.runNode(flowContext, graph, node, nodeStartAt);
       if ('terminal' in next) {
-        if (next.terminal === 'canceled') break;
-        if (next.terminal === 'failed') {
-          return this.finishFailed(startedAt, next.error, node.id);
-        }
-        break;
+        if (next.terminal === 'canceled') return { status: 'canceled' };
+        return { status: 'failed', error: next.error, nodeId: node.id };
       }
 
       currentNodeId = next.nextNodeId;
     }
 
-    if (this.state.canceled) {
-      return this.finishCanceled(startedAt);
-    }
-
-    return this.finishSucceeded(startedAt);
+    return this.state.canceled ? { status: 'canceled' } : { status: 'succeeded' };
   }
 
-  private async runNode(flow: FlowV3, node: NodeV3, nodeStartAt: number): Promise<NodeRunResult> {
+  /**
+   * 执行单个节点（含重试逻辑和 control directive 处理）
+   * @param flow Flow 定义（用于获取 subflow）
+   * @param graph 当前执行的图（主图或 subflow）
+   * @param node 要执行的节点
+   * @param nodeStartAt 节点开始执行的时间戳
+   */
+  private async runNode(
+    flow: FlowV3,
+    graph: GraphV3,
+    node: NodeV3,
+    nodeStartAt: number,
+  ): Promise<NodeRunResult> {
     let attempt = 1;
 
     for (;;) {
@@ -613,8 +812,6 @@ class StorageBackedRunRunner implements RunRunner {
 
       const exec = await this.executeNodeAttempt(flow, node);
       if (exec.status === 'succeeded') {
-        const tookMs = this.env.now() - nodeStartAt;
-
         // Apply vars patch
         if (exec.varsPatch && exec.varsPatch.length > 0) {
           applyVarsPatch(this.state.vars, exec.varsPatch);
@@ -632,6 +829,31 @@ class StorageBackedRunRunner implements RunRunner {
           this.outputs = { ...this.outputs, ...exec.outputs };
         }
 
+        // Handle control directive if present
+        if (exec.control) {
+          const controlResult = await this.executeControlDirective(flow, node.id, exec.control);
+          if (controlResult.status === 'canceled') {
+            return { terminal: 'canceled' };
+          }
+          if (controlResult.status === 'failed') {
+            // Emit node.failed for control directive failure
+            await this.queue.run(() =>
+              this.env.events.append({
+                runId: this.runId,
+                type: 'node.failed',
+                nodeId: node.id,
+                attempt,
+                error: controlResult.error,
+                decision: 'stop',
+              } as RunEventInput),
+            );
+            return { terminal: 'failed', error: controlResult.error };
+          }
+        }
+
+        // Calculate tookMs AFTER control directive execution
+        const tookMs = this.env.now() - nodeStartAt;
+
         // Emit node.succeeded
         await this.queue.run(() =>
           this.env.events.append({
@@ -648,13 +870,13 @@ class StorageBackedRunRunner implements RunRunner {
         }
 
         const label = exec.next?.kind === 'edgeLabel' ? exec.next.label : undefined;
-        return { nextNodeId: findNextNode(flow, node.id, label) };
+        return { nextNodeId: findNextNode(graph, node.id, label) };
       }
 
       // Handle failure
       const error = exec.error;
       const policy = this.resolveNodePolicy(flow, node);
-      const decision = this.decideOnError(flow, node, policy, error);
+      const decision = this.decideOnError(graph, node, policy, error);
 
       // Emit node.failed
       await this.queue.run(() =>
@@ -691,14 +913,14 @@ class StorageBackedRunRunner implements RunRunner {
       }
 
       if (decision.kind === 'continue') {
-        return { nextNodeId: findNextNode(flow, node.id) };
+        return { nextNodeId: findNextNode(graph, node.id) };
       }
 
       if (decision.kind === 'goto') {
         if (decision.target.kind === 'node') {
           return { nextNodeId: decision.target.nodeId };
         }
-        return { nextNodeId: findNextNode(flow, node.id, decision.target.label) };
+        return { nextNodeId: findNextNode(graph, node.id, decision.target.label) };
       }
 
       return { terminal: 'failed', error };
@@ -714,7 +936,7 @@ class StorageBackedRunRunner implements RunRunner {
   }
 
   private decideOnError(
-    flow: FlowV3,
+    graph: GraphV3,
     node: NodeV3,
     policy: NodePolicy,
     _error: RRError,
@@ -723,7 +945,7 @@ class StorageBackedRunRunner implements RunRunner {
 
     // Default: if there's an ON_ERROR edge, use it
     if (!configured) {
-      const onErrorEdge = findEdgeByLabel(flow, node.id, EDGE_LABELS.ON_ERROR);
+      const onErrorEdge = findEdgeByLabel(graph, node.id, EDGE_LABELS.ON_ERROR);
       if (onErrorEdge) {
         return { kind: 'goto', target: { kind: 'edgeLabel', label: EDGE_LABELS.ON_ERROR } };
       }
@@ -889,5 +1111,522 @@ class StorageBackedRunRunner implements RunRunner {
     });
 
     return { runId: this.runId, status: 'canceled', tookMs };
+  }
+
+  // ==================== Control Flow Execution ====================
+
+  /**
+   * 执行控制流指令
+   * @param flow Flow 定义（包含 subflows）
+   * @param nodeId 触发 directive 的节点 ID
+   * @param directive 控制流指令
+   * @returns 执行结果
+   */
+  private async executeControlDirective(
+    flow: FlowV3,
+    nodeId: NodeId,
+    directive: ControlDirectiveV3,
+  ): Promise<ControlDirectiveResult> {
+    // Check recursion depth
+    if (this.controlDepth >= MAX_CONTROL_STACK_DEPTH) {
+      return {
+        status: 'failed',
+        error: createRRError(
+          RR_ERROR_CODES.CONTROL_STACK_OVERFLOW,
+          `Control flow stack depth exceeded maximum of ${MAX_CONTROL_STACK_DEPTH}`,
+          { data: { depth: this.controlDepth, maxDepth: MAX_CONTROL_STACK_DEPTH } },
+        ),
+      };
+    }
+
+    this.controlDepth++;
+    try {
+      switch (directive.kind) {
+        case 'foreach':
+          return await this.executeForeach(flow, nodeId, directive);
+        case 'while':
+          return await this.executeWhile(flow, nodeId, directive);
+        case 'executeSubflow':
+          return await this.executeSubflowDirective(flow, nodeId, directive);
+        case 'executeFlow':
+          return await this.executeFlowDirective(flow, nodeId, directive);
+        default:
+          return {
+            status: 'failed',
+            error: createRRError(
+              RR_ERROR_CODES.VALIDATION_ERROR,
+              `Unknown control directive kind: ${(directive as { kind: string }).kind}`,
+            ),
+          };
+      }
+    } finally {
+      this.controlDepth--;
+    }
+  }
+
+  /**
+   * 执行 foreach 指令
+   * @description 遍历数组变量，对每个元素执行 subflow
+   */
+  private async executeForeach(
+    flow: FlowV3,
+    nodeId: NodeId,
+    directive: ControlDirectiveV3 & { kind: 'foreach' },
+  ): Promise<ControlDirectiveResult> {
+    const startedAt = this.env.now();
+    const { listVar, itemVar, subflowId, concurrency } = directive;
+
+    // Validate concurrency
+    if (
+      concurrency !== undefined &&
+      (concurrency > 1 || concurrency <= 0 || !Number.isInteger(concurrency))
+    ) {
+      return {
+        status: 'failed',
+        error: createRRError(
+          RR_ERROR_CODES.VALIDATION_ERROR,
+          concurrency > 1
+            ? 'Concurrent foreach execution is not yet supported'
+            : `Invalid concurrency value: ${concurrency}`,
+        ),
+      };
+    }
+
+    // Get list value from vars
+    const listValue = this.state.vars[listVar];
+    if (!Array.isArray(listValue)) {
+      return {
+        status: 'failed',
+        error: createRRError(
+          RR_ERROR_CODES.VALIDATION_ERROR,
+          `Variable "${listVar}" is not an array`,
+        ),
+      };
+    }
+
+    // Get subflow
+    const subflow = flow.subflows?.[subflowId];
+    if (!subflow) {
+      return {
+        status: 'failed',
+        error: createRRError(
+          RR_ERROR_CODES.DAG_INVALID,
+          `Subflow "${subflowId}" not found in flow`,
+        ),
+      };
+    }
+
+    // Validate subflow DAG
+    const validation = validateFlowDAG(subflow);
+    if (!validation.ok) {
+      return {
+        status: 'failed',
+        error:
+          validation.errors[0] ?? createRRError(RR_ERROR_CODES.DAG_INVALID, 'Invalid subflow DAG'),
+      };
+    }
+
+    // Emit control.started event
+    await this.queue.run(() =>
+      this.env.events.append({
+        runId: this.runId,
+        type: 'control.started',
+        nodeId,
+        kind: 'foreach',
+        subflowId,
+        totalIterations: listValue.length,
+      } as RunEventInput),
+    );
+
+    // Iterate over list
+    for (let i = 0; i < listValue.length; i++) {
+      if (this.state.canceled) {
+        return { status: 'canceled' };
+      }
+
+      // Set item variable
+      this.state.vars[itemVar] = listValue[i];
+      // Also set iteration index
+      this.state.vars[`${itemVar}_index`] = i;
+
+      // Emit iteration event
+      await this.queue.run(() =>
+        this.env.events.append({
+          runId: this.runId,
+          type: 'control.iteration',
+          nodeId,
+          kind: 'foreach',
+          subflowId,
+          iteration: i,
+          totalIterations: listValue.length,
+        } as RunEventInput),
+      );
+
+      // Execute subflow (flowContext = parent flow for subflow lookup)
+      const result = await this.runGraph(flow, subflow, subflow.entryNodeId);
+      if (result.status === 'canceled') {
+        return { status: 'canceled' };
+      }
+      if (result.status === 'failed') {
+        return { status: 'failed', error: result.error };
+      }
+    }
+
+    // Emit control.completed event
+    const tookMs = this.env.now() - startedAt;
+    await this.queue.run(() =>
+      this.env.events.append({
+        runId: this.runId,
+        type: 'control.completed',
+        nodeId,
+        kind: 'foreach',
+        subflowId,
+        totalIterations: listValue.length,
+        tookMs,
+      } as RunEventInput),
+    );
+
+    return { status: 'succeeded' };
+  }
+
+  /**
+   * 执行 while 指令
+   * @description 条件循环，每次迭代前重新评估条件
+   */
+  private async executeWhile(
+    flow: FlowV3,
+    nodeId: NodeId,
+    directive: ControlDirectiveV3 & { kind: 'while' },
+  ): Promise<ControlDirectiveResult> {
+    const startedAt = this.env.now();
+    const { condition, subflowId, maxIterations } = directive;
+    const effectiveMaxIterations = maxIterations ?? DEFAULT_WHILE_MAX_ITERATIONS;
+
+    // Validate maxIterations
+    if (effectiveMaxIterations <= 0 || !Number.isInteger(effectiveMaxIterations)) {
+      return {
+        status: 'failed',
+        error: createRRError(
+          RR_ERROR_CODES.VALIDATION_ERROR,
+          `Invalid maxIterations value: ${effectiveMaxIterations}`,
+        ),
+      };
+    }
+
+    // Get subflow
+    const subflow = flow.subflows?.[subflowId];
+    if (!subflow) {
+      return {
+        status: 'failed',
+        error: createRRError(
+          RR_ERROR_CODES.DAG_INVALID,
+          `Subflow "${subflowId}" not found in flow`,
+        ),
+      };
+    }
+
+    // Validate subflow DAG
+    const validation = validateFlowDAG(subflow);
+    if (!validation.ok) {
+      return {
+        status: 'failed',
+        error:
+          validation.errors[0] ?? createRRError(RR_ERROR_CODES.DAG_INVALID, 'Invalid subflow DAG'),
+      };
+    }
+
+    // Emit control.started event
+    await this.queue.run(() =>
+      this.env.events.append({
+        runId: this.runId,
+        type: 'control.started',
+        nodeId,
+        kind: 'while',
+        subflowId,
+        maxIterations: effectiveMaxIterations,
+      } as RunEventInput),
+    );
+
+    let iteration = 0;
+
+    while (evaluateConditionV3(condition, this.state.vars)) {
+      if (this.state.canceled) {
+        return { status: 'canceled' };
+      }
+
+      // Check max iterations
+      if (iteration >= effectiveMaxIterations) {
+        // Emit warning log
+        await this.queue.run(() =>
+          this.env.events.append({
+            runId: this.runId,
+            type: 'log',
+            level: 'warn',
+            message: `While loop reached maximum iterations (${effectiveMaxIterations}), stopping`,
+          } as RunEventInput),
+        );
+        break;
+      }
+
+      // Emit iteration event
+      await this.queue.run(() =>
+        this.env.events.append({
+          runId: this.runId,
+          type: 'control.iteration',
+          nodeId,
+          kind: 'while',
+          subflowId,
+          iteration,
+          maxIterations: effectiveMaxIterations,
+        } as RunEventInput),
+      );
+
+      // Execute subflow (flowContext = parent flow for subflow lookup)
+      const result = await this.runGraph(flow, subflow, subflow.entryNodeId);
+      if (result.status === 'canceled') {
+        return { status: 'canceled' };
+      }
+      if (result.status === 'failed') {
+        return { status: 'failed', error: result.error };
+      }
+
+      iteration++;
+    }
+
+    // Emit control.completed event
+    const tookMs = this.env.now() - startedAt;
+    await this.queue.run(() =>
+      this.env.events.append({
+        runId: this.runId,
+        type: 'control.completed',
+        nodeId,
+        kind: 'while',
+        subflowId,
+        totalIterations: iteration,
+        tookMs,
+      } as RunEventInput),
+    );
+
+    return { status: 'succeeded' };
+  }
+
+  /**
+   * 执行 executeSubflow 指令
+   * @description 执行指定的 subflow（单次执行，无循环）
+   */
+  private async executeSubflowDirective(
+    flow: FlowV3,
+    nodeId: NodeId,
+    directive: ControlDirectiveV3 & { kind: 'executeSubflow' },
+  ): Promise<ControlDirectiveResult> {
+    const startedAt = this.env.now();
+    const { subflowId } = directive;
+
+    // Get subflow
+    const subflow = flow.subflows?.[subflowId];
+    if (!subflow) {
+      return {
+        status: 'failed',
+        error: createRRError(
+          RR_ERROR_CODES.DAG_INVALID,
+          `Subflow "${subflowId}" not found in flow`,
+        ),
+      };
+    }
+
+    // Validate subflow DAG
+    const validation = validateFlowDAG(subflow);
+    if (!validation.ok) {
+      return {
+        status: 'failed',
+        error:
+          validation.errors[0] ?? createRRError(RR_ERROR_CODES.DAG_INVALID, 'Invalid subflow DAG'),
+      };
+    }
+
+    // Emit control.started event
+    await this.queue.run(() =>
+      this.env.events.append({
+        runId: this.runId,
+        type: 'control.started',
+        nodeId,
+        kind: 'executeSubflow',
+        subflowId,
+      } as RunEventInput),
+    );
+
+    // Execute subflow (flowContext = parent flow for subflow lookup)
+    const result = await this.runGraph(flow, subflow, subflow.entryNodeId);
+
+    if (result.status === 'canceled') {
+      return { status: 'canceled' };
+    }
+
+    if (result.status === 'failed') {
+      return { status: 'failed', error: result.error };
+    }
+
+    // Emit control.completed event
+    const tookMs = this.env.now() - startedAt;
+    await this.queue.run(() =>
+      this.env.events.append({
+        runId: this.runId,
+        type: 'control.completed',
+        nodeId,
+        kind: 'executeSubflow',
+        subflowId,
+        tookMs,
+      } as RunEventInput),
+    );
+
+    return { status: 'succeeded' };
+  }
+
+  /**
+   * 执行 executeFlow 指令
+   * @description 执行另一个 Flow（跨 Flow 调用）
+   *
+   * 执行语义：
+   * - inline=true (默认): 共享变量表
+   * - inline=false: 克隆变量表，隔离被调用 Flow 的变量修改
+   *
+   * 递归保护：维护 flowCallStack 检测循环调用
+   */
+  private async executeFlowDirective(
+    _parentFlow: FlowV3,
+    nodeId: NodeId,
+    directive: ControlDirectiveV3 & { kind: 'executeFlow' },
+  ): Promise<ControlDirectiveResult> {
+    const startedAt = this.env.now();
+    const { flowId, args, inline = true } = directive;
+
+    // 1. Check for cyclic call
+    if (this.flowCallStack.includes(flowId)) {
+      const cycle = [...this.flowCallStack, flowId].join(' -> ');
+      return {
+        status: 'failed',
+        error: createRRError(RR_ERROR_CODES.FLOW_CYCLE, `Cyclic flow call detected: ${cycle}`, {
+          data: { flowId, callStack: [...this.flowCallStack] },
+        }),
+      };
+    }
+
+    // 2. Load target flow from storage
+    let targetFlow: FlowV3 | null;
+    try {
+      targetFlow = await this.env.storage.flows.get(flowId);
+    } catch (e) {
+      return {
+        status: 'failed',
+        error: createRRError(
+          RR_ERROR_CODES.INTERNAL,
+          `Failed to load flow "${flowId}": ${errorMessage(e)}`,
+        ),
+      };
+    }
+
+    if (!targetFlow) {
+      return {
+        status: 'failed',
+        error: createRRError(RR_ERROR_CODES.FLOW_NOT_FOUND, `Flow "${flowId}" not found`, {
+          data: { flowId },
+        }),
+      };
+    }
+
+    // 3. Validate target flow DAG
+    const validation = validateFlowDAG(targetFlow);
+    if (!validation.ok) {
+      return {
+        status: 'failed',
+        error:
+          validation.errors[0] ??
+          createRRError(RR_ERROR_CODES.DAG_INVALID, `Invalid flow DAG for "${flowId}"`),
+      };
+    }
+
+    // 4. Prepare vars - save reference for restoration in finally
+    const savedVars = this.state.vars;
+    let varsModified = false;
+
+    // 5. Use try/finally to ensure cleanup of callStack and vars on any failure
+    try {
+      // Push flow to call stack first
+      this.flowCallStack.push(flowId);
+
+      // Handle vars based on inline mode
+      let workingVars: Record<string, JsonValue>;
+
+      if (inline) {
+        // Inline mode: share vars reference, merge args
+        workingVars = this.state.vars;
+      } else {
+        // Isolated mode: deep clone vars
+        workingVars = deepClone(this.state.vars);
+        this.state.vars = workingVars;
+        varsModified = true;
+      }
+
+      // Merge args into working vars
+      if (args) {
+        for (const [key, value] of Object.entries(args)) {
+          workingVars[key] = value;
+        }
+      }
+
+      // Apply target flow's variable defaults (only if not already set)
+      for (const def of targetFlow.variables ?? []) {
+        if (workingVars[def.name] === undefined && def.default !== undefined) {
+          workingVars[def.name] = def.default;
+        }
+      }
+
+      // 6. Emit control.started event
+      await this.queue.run(() =>
+        this.env.events.append({
+          runId: this.runId,
+          type: 'control.started',
+          nodeId,
+          kind: 'executeFlow',
+          flowId,
+          inline,
+        } as RunEventInput),
+      );
+
+      // 7. Execute target flow (flowContext = targetFlow for proper policy/subflows)
+      const result = await this.runGraph(targetFlow, targetFlow, targetFlow.entryNodeId);
+
+      // 8. Handle result
+      if (result.status === 'canceled') {
+        return { status: 'canceled' };
+      }
+
+      if (result.status === 'failed') {
+        return { status: 'failed', error: result.error };
+      }
+
+      // 9. Emit control.completed event
+      const tookMs = this.env.now() - startedAt;
+      await this.queue.run(() =>
+        this.env.events.append({
+          runId: this.runId,
+          type: 'control.completed',
+          nodeId,
+          kind: 'executeFlow',
+          flowId,
+          tookMs,
+        } as RunEventInput),
+      );
+
+      return { status: 'succeeded' };
+    } finally {
+      // Always pop flow from call stack
+      this.flowCallStack.pop();
+
+      // Restore vars if isolated mode was activated
+      if (varsModified) {
+        this.state.vars = savedVars;
+      }
+    }
   }
 }

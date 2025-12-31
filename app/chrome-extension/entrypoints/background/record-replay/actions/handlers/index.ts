@@ -13,10 +13,12 @@ import { foreachHandler, ifHandler, switchFrameHandler, whileHandler } from './c
 import { delayHandler } from './delay';
 import { setAttributeHandler, triggerEventHandler } from './dom';
 import { dragHandler } from './drag';
+import { executeFlowHandler } from './execute-flow';
 import { extractHandler } from './extract';
 import { fillHandler } from './fill';
 import { httpHandler } from './http';
 import { keyHandler } from './key';
+import { loopElementsHandler } from './loop-elements';
 import { navigateHandler } from './navigate';
 import { screenshotHandler } from './screenshot';
 import { scriptHandler } from './script';
@@ -31,10 +33,12 @@ export { foreachHandler, ifHandler, switchFrameHandler, whileHandler } from './c
 export { delayHandler } from './delay';
 export { setAttributeHandler, triggerEventHandler } from './dom';
 export { dragHandler } from './drag';
+export { executeFlowHandler } from './execute-flow';
 export { extractHandler } from './extract';
 export { fillHandler } from './fill';
 export { httpHandler } from './http';
 export { keyHandler } from './key';
+export { loopElementsHandler } from './loop-elements';
 export { navigateHandler } from './navigate';
 export { screenshotHandler } from './screenshot';
 export { scriptHandler } from './script';
@@ -56,10 +60,7 @@ export * from './common';
  * - Data: extract, script, http, screenshot
  * - DOM Tools: triggerEvent, setAttribute
  * - Tabs: openTab, switchTab, closeTab, handleDownload
- * - Control Flow: if, foreach, while, switchFrame
- *
- * TODO: Add remaining handlers:
- * - loopElements, executeFlow (advanced control flow)
+ * - Control Flow: if, foreach, while, switchFrame, loopElements, executeFlow
  */
 const ALL_HANDLERS = [
   // Navigation
@@ -94,6 +95,8 @@ const ALL_HANDLERS = [
   foreachHandler,
   whileHandler,
   switchFrameHandler,
+  loopElementsHandler,
+  executeFlowHandler,
 ] as const;
 
 /**
@@ -125,6 +128,8 @@ export function registerReplayHandlers(registry: ActionRegistry): void {
   registry.register(foreachHandler, { override: true });
   registry.register(whileHandler, { override: true });
   registry.register(switchFrameHandler, { override: true });
+  registry.register(loopElementsHandler, { override: true });
+  registry.register(executeFlowHandler, { override: true });
 }
 
 /**

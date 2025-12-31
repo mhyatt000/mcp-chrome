@@ -93,7 +93,7 @@
 import { computed, watch, onMounted, ref } from 'vue';
 import type { NodeBase } from '@/entrypoints/background/record-replay/types';
 import { validateNodeWithRegistry } from '@/entrypoints/popup/components/builder/model/ui-nodes';
-import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
+import { useRRV3Rpc } from '@/entrypoints/shared/composables';
 import PropertyFromSpec from '@/entrypoints/popup/components/builder/components/properties/PropertyFromSpec.vue';
 
 const props = defineProps<{
@@ -465,14 +465,19 @@ const execArgsJson = computed({
   },
 });
 
-// flows for selection
+// flows for selection (using V3 RPC)
+const rpc = useRRV3Rpc({ autoConnect: true });
 type FlowLite = { id: string; name?: string };
 const flows = ref<FlowLite[]>([]);
 onMounted(async () => {
   try {
-    const res = await chrome.runtime.sendMessage({ type: BACKGROUND_MESSAGE_TYPES.RR_LIST_FLOWS });
-    if (res && res.success) flows.value = res.flows || [];
-  } catch {}
+    await rpc.ensureConnected();
+    // rr_v3.listFlows returns array directly, not { flows: [...] }
+    const res = await rpc.request<FlowLite[]>('rr_v3.listFlows');
+    flows.value = Array.isArray(res) ? res : [];
+  } catch (e) {
+    console.warn('[PropertyPanel] Failed to load flows:', e);
+  }
 });
 // 高亮并滚动到指定字段
 watch(

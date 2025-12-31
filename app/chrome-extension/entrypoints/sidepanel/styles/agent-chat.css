@@ -696,32 +696,38 @@
      Loading Animation - Shimmer Text & Scribble Icon
      ============================================================ */
 
-  /* 文案 shimmer 渐变动画 - 光从左到右扫过效果 */
+  /* 文案 shimmer 渐变动画 - V4: 深邃熔岩 (Deep Lava) - 柔和版 */
   .agent-theme .text-shimmer {
     display: inline-block;
-    background: linear-gradient(
-      90deg,
-      var(--ac-accent, #d97757) 0%,
-      var(--ac-accent, #d97757) 40%,
-      #ffe0d0 50%,
-      var(--ac-accent, #d97757) 60%,
-      var(--ac-accent, #d97757) 100%
+    background-image: linear-gradient(
+      to right,
+      var(--ac-accent, #d97757),
+      #b05530,
+      var(--ac-accent, #d97757),
+      #ffd0b8,
+      var(--ac-accent, #d97757)
     );
-    background-size: 250% 100%;
+    background-size: 400% 100%;
     background-repeat: no-repeat;
     color: transparent;
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
-    animation: ac-shimmer 1.8s ease-in-out infinite;
+    animation: ac-shimmer 5s ease-in-out infinite;
   }
 
   @keyframes ac-shimmer {
     0% {
+      background-position: 0% 50%;
+      background-size: 400% 100%;
+    }
+    50% {
       background-position: 100% 50%;
+      background-size: 250% 100%;
     }
     100% {
       background-position: 0% 50%;
+      background-size: 400% 100%;
     }
   }
 

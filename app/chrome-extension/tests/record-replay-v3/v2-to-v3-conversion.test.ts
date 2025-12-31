@@ -289,6 +289,113 @@ describe('convertFlowV2ToV3 - entryNodeId calculation', () => {
   });
 });
 
+// ==================== Subflows Conversion Tests ====================
+
+describe('convertFlowV2ToV3 - subflows', () => {
+  it('converts subflows with nodes and edges', () => {
+    const result = convertFlowV2ToV3(
+      createV2Flow({
+        nodes: [
+          {
+            id: 'foreach-1',
+            type: 'foreach',
+            config: { listVar: 'items', itemVar: 'item', subflowId: 'loop-body' },
+          },
+        ],
+        edges: [],
+        subflows: {
+          'loop-body': {
+            nodes: [
+              { id: 'click-1', type: 'click', config: { selector: '.item' } },
+              { id: 'wait-1', type: 'wait', config: { ms: 1000 } },
+            ],
+            edges: [{ id: 'se1', from: 'click-1', to: 'wait-1' }],
+          },
+        },
+      }),
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data?.subflows).toBeDefined();
+    expect(Object.keys(result.data!.subflows!)).toContain('loop-body');
+
+    const subflow = result.data!.subflows!['loop-body'];
+    expect(subflow.nodes).toHaveLength(2);
+    expect(subflow.edges).toHaveLength(1);
+    expect(subflow.entryNodeId).toBe('click-1');
+  });
+
+  it('calculates correct entryNodeId for subflow', () => {
+    const result = convertFlowV2ToV3(
+      createV2Flow({
+        nodes: [{ id: 'while-1', type: 'while' }],
+        edges: [],
+        subflows: {
+          'while-body': {
+            nodes: [
+              { id: 'nav-1', type: 'navigate', ui: { x: 200, y: 100 } },
+              { id: 'click-1', type: 'click', ui: { x: 100, y: 100 } },
+            ],
+            edges: [],
+          },
+        },
+      }),
+    );
+
+    expect(result.success).toBe(true);
+    // click-1 has smaller x, should be entry
+    expect(result.data!.subflows!['while-body'].entryNodeId).toBe('click-1');
+    expect(result.warnings.some((w) => w.includes('subflow "while-body"'))).toBe(true);
+  });
+
+  it('handles subflow with no valid entry node', () => {
+    const result = convertFlowV2ToV3(
+      createV2Flow({
+        nodes: [{ id: 'foreach-1', type: 'foreach' }],
+        edges: [],
+        subflows: {
+          'empty-body': {
+            nodes: [], // No nodes
+            edges: [],
+          },
+        },
+      }),
+    );
+
+    expect(result.success).toBe(true);
+    // Empty subflow should be skipped
+    expect(result.data?.subflows).toBeUndefined();
+    expect(result.warnings.some((w) => w.includes('empty-body'))).toBe(true);
+  });
+
+  it('handles multiple subflows', () => {
+    const result = convertFlowV2ToV3(
+      createV2Flow({
+        nodes: [
+          { id: 'foreach-1', type: 'foreach', config: { subflowId: 'loop1' } },
+          { id: 'foreach-2', type: 'foreach', config: { subflowId: 'loop2' } },
+        ],
+        edges: [{ id: 'e1', from: 'foreach-1', to: 'foreach-2' }],
+        subflows: {
+          loop1: {
+            nodes: [{ id: 'click-a', type: 'click' }],
+            edges: [],
+          },
+          loop2: {
+            nodes: [{ id: 'click-b', type: 'click' }],
+            edges: [],
+          },
+        },
+      }),
+    );
+
+    expect(result.success).toBe(true);
+    expect(Object.keys(result.data!.subflows!)).toHaveLength(2);
+    expect(result.data!.subflows!['loop1'].entryNodeId).toBe('click-a');
+    expect(result.data!.subflows!['loop2'].entryNodeId).toBe('click-b');
+  });
+});
+
 // ==================== Roundtrip Tests ====================
 
 describe('V2 <-> V3 roundtrip conversion', () => {
@@ -340,5 +447,47 @@ describe('V2 <-> V3 roundtrip conversion', () => {
     expect(node?.disabled).toBe(true);
     expect(node?.config).toEqual({ url: 'https://example.com', waitUntil: 'load' });
     expect(node?.ui).toEqual({ x: 100, y: 200 });
+  });
+
+  it('preserves subflows through roundtrip', () => {
+    const original = createV2Flow({
+      nodes: [
+        {
+          id: 'foreach-1',
+          type: 'foreach',
+          config: { listVar: 'items', itemVar: 'item', subflowId: 'loop-body' },
+        },
+      ],
+      edges: [],
+      subflows: {
+        'loop-body': {
+          nodes: [
+            { id: 'click-1', type: 'click', config: { selector: '.item' }, ui: { x: 50, y: 50 } },
+            { id: 'wait-1', type: 'wait', config: { ms: 1000 }, ui: { x: 150, y: 50 } },
+          ],
+          edges: [{ id: 'se1', from: 'click-1', to: 'wait-1' }],
+        },
+      },
+    });
+
+    const toV3 = convertFlowV2ToV3(original);
+    expect(toV3.success).toBe(true);
+
+    const backToV2 = convertFlowV3ToV2(toV3.data!);
+    expect(backToV2.success).toBe(true);
+
+    // Check subflow preserved
+    expect(backToV2.data?.subflows).toBeDefined();
+    expect(backToV2.data?.subflows?.['loop-body']).toBeDefined();
+
+    const subflow = backToV2.data?.subflows?.['loop-body'];
+    expect(subflow?.nodes).toHaveLength(2);
+    expect(subflow?.edges).toHaveLength(1);
+
+    // Check node details preserved
+    const clickNode = subflow?.nodes.find((n) => n.id === 'click-1');
+    expect(clickNode?.type).toBe('click');
+    expect(clickNode?.config).toEqual({ selector: '.item' });
+    expect(clickNode?.ui).toEqual({ x: 50, y: 50 });
   });
 });

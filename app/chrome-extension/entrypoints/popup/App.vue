@@ -345,6 +345,7 @@ import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
 import { LINKS } from '@/common/constants';
 import { getMessage } from '@/utils/i18n';
 import { useAgentTheme, type AgentThemeId } from '../sidepanel/composables/useAgentTheme';
+import { useRRV3Rpc } from '@/entrypoints/shared/composables';
 
 import ConfirmDialog from './components/ConfirmDialog.vue';
 import ProgressIndicator from './components/ProgressIndicator.vue';
@@ -368,6 +369,9 @@ import {
 
 // AgentChat theme - 从preload中获取，保持与sidepanel一致
 const { theme: agentTheme, initTheme } = useAgentTheme();
+
+// RR V3 RPC client
+const rrRpc = useRRV3Rpc({ autoConnect: true });
 
 // 当前视图状态：首页 or 本地模型页
 const currentView = ref<'home' | 'local-model'>('home');
@@ -404,12 +408,16 @@ const filteredRrFlows = computed(() => {
 
 // Flow editor在独立窗口中打开；在popup不再展示繁杂列表
 
+type FlowLite = { id: string; name: string; description?: string; meta?: any; variables?: any[] };
+
 const loadFlows = async () => {
   try {
-    const res = await chrome.runtime.sendMessage({ type: BACKGROUND_MESSAGE_TYPES.RR_LIST_FLOWS });
-    if (res && res.success) rrFlows.value = res.flows || [];
+    await rrRpc.ensureConnected();
+    // rr_v3.listFlows returns array directly
+    const res = await rrRpc.request<FlowLite[]>('rr_v3.listFlows');
+    rrFlows.value = Array.isArray(res) ? res : [];
   } catch (e) {
-    /* ignore */
+    console.warn('[Popup] Failed to load flows:', e);
   }
 };
 
@@ -420,9 +428,11 @@ function isFlowBoundToCurrent(flow: any) {
     if (!currentTabUrl.value) return true;
     const url = new URL(currentTabUrl.value);
     return bindings.some((b: any) => {
-      if (b.type === 'domain') return url.hostname.includes(b.value);
-      if (b.type === 'path') return url.pathname.startsWith(b.value);
-      if (b.type === 'url') return (url.href || '').startsWith(b.value);
+      // Support both V2 (type) and V3 (kind) field names
+      const bindingType = b.type || b.kind;
+      if (bindingType === 'domain') return url.hostname.includes(b.value);
+      if (bindingType === 'path') return url.pathname.startsWith(b.value);
+      if (bindingType === 'url') return (url.href || '').startsWith(b.value);
       return false;
     });
   } catch {
@@ -432,81 +442,87 @@ function isFlowBoundToCurrent(flow: any) {
 
 // 运行记录与覆盖项在侧边栏页面查看
 const startRecording = async () => {
-  // TODO: 录制回放功能开发中，暂时拦截
-  showComingSoonToast('录制回放');
-  return;
-  // if (rrRecording.value) return;
-  // try {
-  //   const res = await chrome.runtime.sendMessage({
-  //     type: BACKGROUND_MESSAGE_TYPES.RR_START_RECORDING,
-  //     meta: { name: '新录制' },
-  //   });
-  //   rrRecording.value = !!(res && res.success);
-  // } catch (e) {
-  //   console.error('开始录制失败:', e);
-  //   rrRecording.value = false;
-  // }
+  if (rrRecording.value) return;
+  try {
+    await rrRpc.ensureConnected();
+
+    const res = await rrRpc.request<{ success: boolean; error?: string }>(
+      'rr_v3.startRecording',
+      { meta: { name: '新录制' } },
+      { timeoutMs: 30_000 },
+    );
+
+    // Start may fail with "already active"; always sync from background afterwards
+    if (!res?.success && res?.error) {
+      console.warn('[Popup] Failed to start recording:', res.error);
+    }
+    await refreshRecordingStatus();
+  } catch (e) {
+    console.error('开始录制失败:', e);
+    await refreshRecordingStatus();
+  }
 };
 
 const stopRecording = async () => {
-  // TODO: 录制回放功能开发中，暂时拦截
-  showComingSoonToast('录制回放');
-  return;
-  // if (!rrRecording.value) return;
-  // try {
-  //   const res = await chrome.runtime.sendMessage({
-  //     type: BACKGROUND_MESSAGE_TYPES.RR_STOP_RECORDING,
-  //   });
-  //   rrRecording.value = false;
-  //   if (res && res.success) await loadFlows();
-  // } catch (e) {
-  //   console.error('停止录制失败:', e);
-  //   rrRecording.value = false;
-  // }
+  if (!rrRecording.value) return;
+  try {
+    await rrRpc.ensureConnected();
+
+    const res = await rrRpc.request<{
+      success: boolean;
+      error?: string;
+      flowId?: string;
+      v3Saved?: boolean;
+      v3Errors?: string[];
+      v3Warnings?: string[];
+    }>('rr_v3.stopRecording', undefined, { timeoutMs: 30_000 });
+
+    // Recording should be stopped regardless of conversion outcome; always sync status
+    if (res?.error) {
+      console.warn('[Popup] Stop recording returned warning/error:', res.error);
+    }
+    await refreshRecordingStatus();
+
+    // Refresh workflows list so newly recorded flow (saved into V3 storage) appears
+    if (res?.success) {
+      await loadFlows();
+    }
+  } catch (e) {
+    console.error('停止录制失败:', e);
+    await refreshRecordingStatus();
+  }
+};
+
+const refreshRecordingStatus = async () => {
+  try {
+    await rrRpc.ensureConnected();
+    const res = await rrRpc.request<{ success: boolean; status?: string }>(
+      'rr_v3.getRecordingStatus',
+    );
+    if (res?.success && typeof res.status === 'string') {
+      rrRecording.value = res.status !== 'idle';
+    }
+  } catch (e) {
+    // Best-effort: status sync should not block Popup
+    console.warn('[Popup] Failed to refresh recording status:', e);
+  }
 };
 
 const runFlow = async (flowId: string) => {
   try {
-    // load flow to get runOptions
-    let flow: any = null;
-    try {
-      const getRes = await chrome.runtime.sendMessage({
-        type: BACKGROUND_MESSAGE_TYPES.RR_GET_FLOW,
-        flowId,
-      });
-      if (getRes && getRes.success) flow = getRes.flow;
-    } catch {}
-    const runOptions = (flow && flow.meta && flow.meta.runOptions) || {};
-    // No per-run overrides in popup; sidepanel/editor manage advanced options
-    const ov: any = {};
-    const res = await chrome.runtime.sendMessage({
-      type: BACKGROUND_MESSAGE_TYPES.RR_RUN_FLOW,
-      flowId,
-      options: { ...runOptions, ...ov, returnLogs: true },
-    });
-    if (!(res && res.success)) {
-      console.warn('回放失败');
+    await rrRpc.ensureConnected();
+    // V3 enqueueRun - fire-and-forget (run executes asynchronously in background)
+    // Popup doesn't wait for completion; use sidepanel/builder for detailed results
+    const res = await rrRpc.request<{ runId: string }>('rr_v3.enqueueRun', { flowId });
+    if (!res || !res.runId) {
+      console.warn('[Popup] Failed to enqueue run');
       return;
     }
-    // If failed, open builder and focus the failed node
-    try {
-      const result = res.result;
-      if (result && result.success === false) {
-        const logs = result.logs || [];
-        const failed = logs.find((l: any) => l.status === 'failed');
-        if (failed && failed.stepId) {
-          // 打开独立编辑窗口并定位失败节点
-          if (flow) openBuilderWindow(flow.id, String(failed.stepId));
-        }
-      } else if (result && result.success === true) {
-        // If run succeeded but selector fallback was used, suggest updating priorities
-        const logs = result.logs || [];
-        const fb = logs.find((l: any) => l.fallbackUsed && l.fallbackTo);
-        if (fb && flow) openBuilderWindow(flow.id, String(fb.stepId || ''));
-      }
-    } catch {}
+    console.log(`[Popup] Enqueued run: ${res.runId}`);
+    // Note: V3 doesn't return immediate results; monitoring is done via events
+    // For detailed run results, users should use the sidepanel or builder UI
   } catch (e) {
-    console.error('回放失败:', e);
+    console.error('[Popup] Run failed:', e);
   }
 };
 
@@ -634,9 +650,7 @@ async function openSidepanelAndClose(tab: string) {
 
 // Open sidepanel from popup for workflow management
 function openWorkflowSidepanel() {
-  // TODO: 工作流功能开发中，暂时拦截
-  showComingSoonToast('工作流管理');
-  // openSidepanelAndClose('workflows');
+  openSidepanelAndClose('workflows');
 }
 
 // Open sidepanel for element marker management
@@ -1522,6 +1536,7 @@ onMounted(async () => {
   await refreshStorageStats();
   await loadCacheStats();
   await loadFlows();
+  await refreshRecordingStatus();
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     currentTabUrl.value = tab?.url || '';

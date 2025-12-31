@@ -406,7 +406,7 @@ describe('adaptV2ActionHandlerToV3NodeDefinition', () => {
       expect(result.error?.code).toBe(RR_ERROR_CODES.RUN_PAUSED);
     });
 
-    it('returns failed for control directive (foreach)', async () => {
+    it('maps V2 control directive (foreach) to V3 format', async () => {
       const handler = createMockHandler(async () => ({
         status: 'success',
         control: {
@@ -423,12 +423,16 @@ describe('adaptV2ActionHandlerToV3NodeDefinition', () => {
 
       const result = await nodeDef.execute(ctx, node as any);
 
-      expect(result.status).toBe('failed');
-      expect(result.error?.code).toBe(RR_ERROR_CODES.UNSUPPORTED_NODE);
-      expect(result.error?.message).toContain('foreach');
+      expect(result.status).toBe('succeeded');
+      expect(result.control).toEqual({
+        kind: 'foreach',
+        listVar: 'items',
+        itemVar: 'item',
+        subflowId: 'subflow-1',
+      });
     });
 
-    it('returns failed for control directive (while)', async () => {
+    it('maps V2 control directive (while) to V3 format', async () => {
       const handler = createMockHandler(async () => ({
         status: 'success',
         control: {
@@ -445,9 +449,86 @@ describe('adaptV2ActionHandlerToV3NodeDefinition', () => {
 
       const result = await nodeDef.execute(ctx, node as any);
 
+      expect(result.status).toBe('succeeded');
+      expect(result.control).toEqual({
+        kind: 'while',
+        condition: { left: 'a', op: '==', right: 'b' },
+        subflowId: 'subflow-1',
+        maxIterations: 10,
+      });
+    });
+
+    it('rejects foreach with concurrency > 1 (V3 only supports sequential)', async () => {
+      const handler = createMockHandler(async () => ({
+        status: 'success',
+        control: {
+          kind: 'foreach' as const,
+          listVar: 'items',
+          itemVar: 'item',
+          subflowId: 'subflow-1',
+          concurrency: 5,
+        },
+      }));
+
+      const nodeDef = adaptV2ActionHandlerToV3NodeDefinition(handler);
+      const ctx = createMockV3Context();
+      const node = createMockNode();
+
+      const result = await nodeDef.execute(ctx, node as any);
+
       expect(result.status).toBe('failed');
-      expect(result.error?.code).toBe(RR_ERROR_CODES.UNSUPPORTED_NODE);
-      expect(result.error?.message).toContain('while');
+      expect(result.error?.code).toBe('VALIDATION_ERROR');
+      expect(result.error?.message).toContain('concurrency');
+      expect(result.error?.message).toContain('5');
+    });
+
+    it('accepts foreach with concurrency = 1 (explicit)', async () => {
+      const handler = createMockHandler(async () => ({
+        status: 'success',
+        control: {
+          kind: 'foreach' as const,
+          listVar: 'items',
+          itemVar: 'item',
+          subflowId: 'subflow-1',
+          concurrency: 1,
+        },
+      }));
+
+      const nodeDef = adaptV2ActionHandlerToV3NodeDefinition(handler);
+      const ctx = createMockV3Context();
+      const node = createMockNode();
+
+      const result = await nodeDef.execute(ctx, node as any);
+
+      expect(result.status).toBe('succeeded');
+      expect(result.control).toEqual({
+        kind: 'foreach',
+        listVar: 'items',
+        itemVar: 'item',
+        subflowId: 'subflow-1',
+      });
+    });
+
+    it('rejects while with invalid maxIterations', async () => {
+      const handler = createMockHandler(async () => ({
+        status: 'success',
+        control: {
+          kind: 'while' as const,
+          condition: { kind: 'truthy', value: 'x' },
+          subflowId: 'subflow-1',
+          maxIterations: -1,
+        },
+      }));
+
+      const nodeDef = adaptV2ActionHandlerToV3NodeDefinition(handler);
+      const ctx = createMockV3Context();
+      const node = createMockNode();
+
+      const result = await nodeDef.execute(ctx, node as any);
+
+      expect(result.status).toBe('failed');
+      expect(result.error?.code).toBe('VALIDATION_ERROR');
+      expect(result.error?.message).toContain('maxIterations');
     });
   });
 

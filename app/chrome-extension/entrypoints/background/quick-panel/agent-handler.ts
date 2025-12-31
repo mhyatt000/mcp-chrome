@@ -23,6 +23,7 @@ import {
   type QuickPanelAIEventMessage,
   type QuickPanelCancelAIMessage,
   type QuickPanelCancelAIResponse,
+  type QuickPanelGetProjectInfoResponse,
   type QuickPanelSendToAIMessage,
   type QuickPanelSendToAIResponse,
 } from '@/common/message-types';
@@ -728,6 +729,62 @@ async function handleCancelAI(
 }
 
 // ============================================================
+// Get Project Info
+// ============================================================
+
+/**
+ * Handle QUICK_PANEL_GET_PROJECT_INFO message.
+ * Returns the current session ID, project ID, and project name.
+ */
+async function handleGetProjectInfo(): Promise<QuickPanelGetProjectInfoResponse> {
+  try {
+    // Read server port and selected session from storage
+    const stored = await chrome.storage.local.get([
+      STORAGE_KEYS.NATIVE_SERVER_PORT,
+      STORAGE_KEY_SELECTED_SESSION,
+    ]);
+
+    const port =
+      normalizePort(stored?.[STORAGE_KEYS.NATIVE_SERVER_PORT]) ?? NATIVE_HOST.DEFAULT_PORT;
+    const sessionId = normalizeString(stored?.[STORAGE_KEY_SELECTED_SESSION]).trim() || null;
+
+    if (!sessionId) {
+      return { success: true, sessionId: null, projectId: null, projectName: null };
+    }
+
+    // Fetch session info from server
+    const sessionUrl = `http://127.0.0.1:${port}/agent/sessions/${encodeURIComponent(sessionId)}`;
+    const sessionResponse = await fetch(sessionUrl);
+    if (!sessionResponse.ok) {
+      return { success: true, sessionId, projectId: null, projectName: null };
+    }
+
+    const session = (await sessionResponse.json()) as { projectId?: string };
+    const projectId = session?.projectId ?? null;
+
+    if (!projectId) {
+      return { success: true, sessionId, projectId: null, projectName: null };
+    }
+
+    // Fetch project info to get the name
+    const projectUrl = `http://127.0.0.1:${port}/agent/projects/${encodeURIComponent(projectId)}`;
+    const projectResponse = await fetch(projectUrl);
+    if (!projectResponse.ok) {
+      return { success: true, sessionId, projectId, projectName: null };
+    }
+
+    const project = (await projectResponse.json()) as { name?: string };
+    const projectName = project?.name ?? null;
+
+    return { success: true, sessionId, projectId, projectName };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`${LOG_PREFIX} Failed to get project info:`, msg);
+    return { success: false, error: msg || 'Failed to get project info' };
+  }
+}
+
+// ============================================================
 // Initialization
 // ============================================================
 
@@ -755,6 +812,17 @@ export function initQuickPanelAgentHandler(): void {
     // Handle QUICK_PANEL_CANCEL_AI
     if (message?.type === BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_CANCEL_AI) {
       handleCancelAI(message as QuickPanelCancelAIMessage, sender)
+        .then(sendResponse)
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          sendResponse({ success: false, error: msg || 'Unknown error' });
+        });
+      return true; // Async response
+    }
+
+    // Handle QUICK_PANEL_GET_PROJECT_INFO
+    if (message?.type === BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_GET_PROJECT_INFO) {
+      handleGetProjectInfo()
         .then(sendResponse)
         .catch((err) => {
           const msg = err instanceof Error ? err.message : String(err);

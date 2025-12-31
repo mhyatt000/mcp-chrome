@@ -461,15 +461,11 @@ async function run(id: string) {
 }
 
 function edit(id: string) {
-  // V3 Builder not yet implemented - show message
-  alert('V3 Builder 尚未实现，暂时无法编辑工作流');
-  // TODO: openBuilder({ flowId: id });
+  openBuilder({ flowId: id });
 }
 
 function createFlow() {
-  // V3 Builder not yet implemented - show message
-  alert('V3 Builder 尚未实现，暂时无法创建工作流');
-  // TODO: openBuilder({ newFlow: true });
+  openBuilder({ newFlow: true });
 }
 
 async function remove(id: string) {

@@ -10,10 +10,13 @@ import {
   BACKGROUND_MESSAGE_TYPES,
   type QuickPanelActivateTabResponse,
   type QuickPanelCloseTabResponse,
+  type QuickPanelTabSetMutedResponse,
+  type QuickPanelTabSetPinnedResponse,
   type QuickPanelTabSummary,
   type QuickPanelTabsQueryResponse,
 } from '@/common/message-types';
 import type { Action, SearchProvider, SearchProviderContext, SearchResult } from '../core/types';
+import { computeWeightedTokenScore, formatMarkdownLink, writeToClipboard } from './provider-utils';
 
 // ============================================================
 // Types
@@ -30,6 +33,8 @@ export interface TabsSearchResultData {
   favIconUrl?: string;
   pinned: boolean;
   active: boolean;
+  audible: boolean;
+  muted: boolean;
 }
 
 export interface TabsProviderOptions {
@@ -57,6 +62,8 @@ interface TabsClient {
   listTabs: (options: { includeAllWindows: boolean; signal: AbortSignal }) => Promise<TabsSnapshot>;
   activateTab: (tabId: number, windowId?: number) => Promise<void>;
   closeTab: (tabId: number) => Promise<void>;
+  setPinned: (tabId: number, pinned: boolean) => Promise<void>;
+  setMuted: (tabId: number, muted: boolean) => Promise<void>;
 }
 
 function createRuntimeTabsClient(): TabsClient {
@@ -120,100 +127,44 @@ function createRuntimeTabsClient(): TabsClient {
     }
   }
 
-  return { listTabs, activateTab, closeTab };
+  async function setPinned(tabId: number, pinned: boolean): Promise<void> {
+    if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
+      throw new Error('chrome.runtime.sendMessage is not available');
+    }
+
+    const resp = (await chrome.runtime.sendMessage({
+      type: BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_TAB_SET_PINNED,
+      payload: { tabId, pinned },
+    })) as QuickPanelTabSetPinnedResponse;
+
+    if (!resp || resp.success !== true) {
+      const err = (resp as { error?: unknown })?.error;
+      throw new Error(typeof err === 'string' ? err : 'Failed to set tab pinned state');
+    }
+  }
+
+  async function setMuted(tabId: number, muted: boolean): Promise<void> {
+    if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
+      throw new Error('chrome.runtime.sendMessage is not available');
+    }
+
+    const resp = (await chrome.runtime.sendMessage({
+      type: BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_TAB_SET_MUTED,
+      payload: { tabId, muted },
+    })) as QuickPanelTabSetMutedResponse;
+
+    if (!resp || resp.success !== true) {
+      const err = (resp as { error?: unknown })?.error;
+      throw new Error(typeof err === 'string' ? err : 'Failed to set tab muted state');
+    }
+  }
+
+  return { listTabs, activateTab, closeTab, setPinned, setMuted };
 }
 
 // ============================================================
 // Scoring Helpers
 // ============================================================
-
-function normalizeText(value: unknown): string {
-  return String(value ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ');
-}
-
-function normalizeUrl(value: unknown): string {
-  const raw = String(value ?? '').trim();
-  if (!raw) return '';
-
-  // Remove protocol and www prefix for cleaner matching
-  let text = raw.replace(/^https?:\/\//i, '').replace(/^www\./i, '');
-
-  // Attempt URL decode
-  try {
-    text = decodeURIComponent(text);
-  } catch {
-    // Best-effort
-  }
-
-  return normalizeText(text);
-}
-
-/**
- * Check if needle is a subsequence of haystack.
- */
-function isSubsequence(needle: string, haystack: string): boolean {
-  if (!needle) return true;
-  let i = 0;
-  for (const ch of haystack) {
-    if (ch === needle[i]) i++;
-    if (i >= needle.length) return true;
-  }
-  return false;
-}
-
-/** Minimum token length for subsequence matching (to avoid over-matching) */
-const MIN_SUBSEQUENCE_TOKEN_LENGTH = 3;
-
-/**
- * Check if character is a word boundary.
- */
-function isBoundaryChar(ch: string): boolean {
-  return (
-    ch === '' ||
-    ch === ' ' ||
-    ch === '/' ||
-    ch === '-' ||
-    ch === '_' ||
-    ch === '.' ||
-    ch === ':' ||
-    ch === '#' ||
-    ch === '?' ||
-    ch === '&'
-  );
-}
-
-/**
- * Score a single token against a haystack string.
- * Returns 0 if no match, higher values for better matches.
- */
-function scoreToken(haystack: string, token: string): number {
-  if (!haystack || !token) return 0;
-
-  // Exact match
-  if (haystack === token) return 1;
-
-  // Prefix match
-  if (haystack.startsWith(token)) return 0.95;
-
-  // Substring match
-  const idx = haystack.indexOf(token);
-  if (idx >= 0) {
-    const prev = idx > 0 ? haystack[idx - 1] : '';
-    const boundaryBoost = isBoundaryChar(prev) ? 0.15 : 0;
-    const positionPenalty = idx / Math.max(1, haystack.length);
-    return Math.max(0.55, 0.8 + boundaryBoost - positionPenalty * 0.2);
-  }
-
-  // Subsequence match (fuzzy) - only for tokens >= MIN_SUBSEQUENCE_TOKEN_LENGTH
-  if (token.length >= MIN_SUBSEQUENCE_TOKEN_LENGTH && isSubsequence(token, haystack)) {
-    return 0.4;
-  }
-
-  return 0;
-}
 
 /**
  * Compute overall score for a tab based on query tokens.
@@ -227,25 +178,14 @@ function computeTabScore(
 ): number {
   if (queryTokens.length === 0) return 0;
 
-  const normalizedTitle = normalizeText(tab.title);
-  const normalizedUrl = normalizeUrl(tab.url);
-
-  // For each token, take the best score from title or url
-  let totalScore = 0;
-  for (const token of queryTokens) {
-    const titleTokenScore = scoreToken(normalizedTitle, token);
-    const urlTokenScore = scoreToken(normalizedUrl, token);
-    const bestScore = Math.max(titleTokenScore, urlTokenScore);
-
-    // If token doesn't match either field, reject this tab
-    if (bestScore <= 0) return 0;
-
-    // Weight title matches higher than url matches (title: 0.75, url: 0.25)
-    const weightedScore = titleTokenScore * 0.75 + urlTokenScore * 0.25;
-    totalScore += weightedScore;
-  }
-
-  const base = (totalScore / queryTokens.length) * 100;
+  // Use shared weighted token scoring
+  const base = computeWeightedTokenScore(
+    [
+      { value: tab.title, weight: 0.75, mode: 'text' },
+      { value: tab.url, weight: 0.25, mode: 'url' },
+    ],
+    queryTokens,
+  );
   if (base <= 0) return 0;
 
   // Boost for context relevance
@@ -323,10 +263,10 @@ export function createTabsProvider(
    * Get actions available for a tab result.
    */
   function getActions(item: SearchResult<TabsSearchResultData>): Action<TabsSearchResultData>[] {
-    const tabId = item.data.tabId;
-    const windowId = item.data.windowId;
+    const { tabId, windowId, url, title, pinned, audible, muted } = item.data;
 
-    return [
+    const actions: Action<TabsSearchResultData>[] = [
+      // Primary action: Switch to tab
       {
         id: 'tabs.activate',
         title: 'Switch to tab',
@@ -335,15 +275,59 @@ export function createTabsProvider(
           await client.activateTab(tabId, windowId);
         },
       },
+      // Copy URL
       {
-        id: 'tabs.close',
-        title: 'Close tab',
-        tone: 'danger',
+        id: 'tabs.copyUrl',
+        title: 'Copy URL',
+        hotkeyHint: 'Cmd+C',
         execute: async () => {
-          await client.closeTab(tabId);
+          await writeToClipboard(url);
+        },
+      },
+      // Copy as Markdown link
+      {
+        id: 'tabs.copyMarkdown',
+        title: 'Copy as Markdown',
+        hotkeyHint: 'Cmd+Shift+C',
+        execute: async () => {
+          await writeToClipboard(formatMarkdownLink(title, url));
+        },
+      },
+      // Pin/Unpin toggle
+      {
+        id: pinned ? 'tabs.unpin' : 'tabs.pin',
+        title: pinned ? 'Unpin tab' : 'Pin tab',
+        hotkeyHint: 'Cmd+P',
+        execute: async () => {
+          await client.setPinned(tabId, !pinned);
         },
       },
     ];
+
+    // Add mute/unmute action only for audible tabs or already muted tabs
+    if (audible || muted) {
+      actions.push({
+        id: muted ? 'tabs.unmute' : 'tabs.mute',
+        title: muted ? 'Unmute tab' : 'Mute tab',
+        hotkeyHint: 'Cmd+M',
+        execute: async () => {
+          await client.setMuted(tabId, !muted);
+        },
+      });
+    }
+
+    // Close tab (danger action at the end)
+    actions.push({
+      id: 'tabs.close',
+      title: 'Close tab',
+      tone: 'danger',
+      hotkeyHint: 'Cmd+W',
+      execute: async () => {
+        await client.closeTab(tabId);
+      },
+    });
+
+    return actions;
   }
 
   /**
@@ -421,6 +405,8 @@ export function createTabsProvider(
         favIconUrl: tab.favIconUrl,
         pinned: tab.pinned,
         active: tab.active,
+        audible: tab.audible,
+        muted: tab.muted,
       };
 
       return {

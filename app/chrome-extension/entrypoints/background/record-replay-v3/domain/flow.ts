@@ -4,7 +4,7 @@
  */
 
 import type { ISODateTimeString, JsonObject } from './json';
-import type { EdgeId, EdgeLabel, FlowId, NodeId } from './ids';
+import type { EdgeId, EdgeLabel, FlowId, NodeId, SubflowId } from './ids';
 import type { FlowPolicy, NodePolicy } from './policy';
 import type { VariableDefinition } from './variables';
 
@@ -51,6 +51,28 @@ export interface NodeV3 {
 }
 
 /**
+ * Graph V3
+ * @description 可执行图结构（Flow/Subflow 共用）
+ */
+export interface GraphV3 {
+  /** 入口节点 ID（显式指定，不依赖入度推断） */
+  entryNodeId: NodeId;
+  /** 节点列表 */
+  nodes: NodeV3[];
+  /** 边列表 */
+  edges: EdgeV3[];
+}
+
+/**
+ * Subflow V3
+ * @description 可复用的子图（由控制流指令引用）
+ */
+export interface SubflowV3 extends GraphV3 {
+  /** 子流程名称（用于显示/诊断） */
+  name?: string;
+}
+
+/**
  * Flow 元数据绑定
  * @description 定义 Flow 与特定域名/路径/URL 的关联
  */
@@ -63,7 +85,7 @@ export interface FlowBinding {
  * Flow V3
  * @description 完整的 Flow 定义，包含节点、边和配置
  */
-export interface FlowV3 {
+export interface FlowV3 extends GraphV3 {
   /** Schema 版本 */
   schemaVersion: typeof FLOW_SCHEMA_VERSION;
   /** Flow 唯一标识符 */
@@ -77,12 +99,8 @@ export interface FlowV3 {
   /** 更新时间 */
   updatedAt: ISODateTimeString;
 
-  /** 入口节点 ID（显式指定，不依赖入度推断） */
-  entryNodeId: NodeId;
-  /** 节点列表 */
-  nodes: NodeV3[];
-  /** 边列表 */
-  edges: EdgeV3[];
+  /** 子流程定义（用于 foreach/while/executeSubflow 等控制流） */
+  subflows?: Record<SubflowId, SubflowV3>;
 
   /** 变量定义 */
   variables?: VariableDefinition[];
@@ -94,26 +112,35 @@ export interface FlowV3 {
     tags?: string[];
     /** 绑定规则 */
     bindings?: FlowBinding[];
+    /** Tool/publish 元数据 (用于外部工具调用时的标识) */
+    tool?: {
+      /** 稳定的 slug 标识符 (用于 flow.<slug> 工具名) */
+      slug?: string;
+      /** 分类 */
+      category?: string;
+      /** 描述 */
+      description?: string;
+    };
   };
 }
 
 /**
  * 根据 ID 查找节点
  */
-export function findNodeById(flow: FlowV3, nodeId: NodeId): NodeV3 | undefined {
-  return flow.nodes.find((n) => n.id === nodeId);
+export function findNodeById(graph: GraphV3, nodeId: NodeId): NodeV3 | undefined {
+  return graph.nodes.find((n) => n.id === nodeId);
 }
 
 /**
  * 查找从指定节点出发的所有边
  */
-export function findEdgesFrom(flow: FlowV3, nodeId: NodeId): EdgeV3[] {
-  return flow.edges.filter((e) => e.from === nodeId);
+export function findEdgesFrom(graph: GraphV3, nodeId: NodeId): EdgeV3[] {
+  return graph.edges.filter((e) => e.from === nodeId);
 }
 
 /**
  * 查找指向指定节点的所有边
  */
-export function findEdgesTo(flow: FlowV3, nodeId: NodeId): EdgeV3[] {
-  return flow.edges.filter((e) => e.to === nodeId);
+export function findEdgesTo(graph: GraphV3, nodeId: NodeId): EdgeV3[] {
+  return graph.edges.filter((e) => e.to === nodeId);
 }

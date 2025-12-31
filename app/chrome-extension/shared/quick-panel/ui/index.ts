@@ -43,6 +43,20 @@ export {
   type QuickEntriesOptions,
 } from './quick-entries';
 
+export {
+  mountQuickPanelSearchView,
+  type QuickPanelSearchViewManager,
+  type QuickPanelSearchViewMountPoints,
+  type QuickPanelSearchViewOptions,
+  type QuickPanelSearchViewState,
+} from './search-view';
+
+export {
+  createActionPanel,
+  type ActionPanelManager,
+  type ActionPanelOptions,
+} from './action-panel';
+
 // ============================================================
 // AI Chat Components
 // ============================================================
@@ -61,6 +75,14 @@ export {
   type QuickPanelAiChatPanelOptions,
   type QuickPanelAiChatPanelState,
 } from './ai-chat-panel';
+
+export {
+  mountQuickPanelAiChatView,
+  type QuickPanelAiChatViewManager,
+  type QuickPanelAiChatViewMountPoints,
+  type QuickPanelAiChatViewOptions,
+  type QuickPanelAiChatViewState,
+} from './ai-chat-view';
 
 // ============================================================
 // Styles
