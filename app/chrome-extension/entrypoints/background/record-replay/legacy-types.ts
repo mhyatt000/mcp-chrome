@@ -9,7 +9,7 @@
  * 2. Recording pipeline that still produces Step[] output
  * 3. Legacy node handlers in nodes/ directory
  *
- * New code should use the Action type system from ./actions/types.ts instead.
+ * New code should use the Action type system from @/entrypoints/background/replay-actions/types.ts instead.
  *
  * Migration status: P4 phase 1 - types extracted, re-exported from types.ts
  */

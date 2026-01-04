@@ -7,6 +7,8 @@
 
 import {
   BACKGROUND_MESSAGE_TYPES,
+  type QuickPanelHistoryDeleteMessage,
+  type QuickPanelHistoryDeleteResponse,
   type QuickPanelHistoryQueryMessage,
   type QuickPanelHistoryQueryResponse,
   type QuickPanelHistorySummary,
@@ -87,6 +89,29 @@ async function handleHistoryQuery(
   }
 }
 
+async function handleHistoryDelete(
+  message: QuickPanelHistoryDeleteMessage,
+  sender: chrome.runtime.MessageSender,
+): Promise<QuickPanelHistoryDeleteResponse> {
+  try {
+    // Validate sender
+    if (!sender.tab?.id) {
+      return { success: false, error: 'Quick Panel request must originate from a tab.' };
+    }
+
+    const url = normalizeString(message.payload?.url).trim();
+    if (!url) {
+      return { success: false, error: 'Invalid url' };
+    }
+
+    await chrome.history.deleteUrl({ url });
+    return { success: true };
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} Error deleting history entry:`, err);
+    return { success: false, error: safeErrorMessage(err) || 'Failed to delete history entry' };
+  }
+}
+
 // ============================================================
 // Initialization
 // ============================================================
@@ -104,6 +129,10 @@ export function initQuickPanelHistoryHandler(): void {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type === BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_HISTORY_QUERY) {
       handleHistoryQuery(message as QuickPanelHistoryQueryMessage, sender).then(sendResponse);
+      return true; // Will respond asynchronously
+    }
+    if (message?.type === BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_HISTORY_DELETE) {
+      handleHistoryDelete(message as QuickPanelHistoryDeleteMessage, sender).then(sendResponse);
       return true; // Will respond asynchronously
     }
     return false;

@@ -62,7 +62,7 @@ export interface SearchInputManager {
   /** Get current state */
   getState: () => SearchInputState;
   /** Set scope programmatically */
-  setScope: (scope: QuickPanelScope, options?: { emit?: boolean }) => void;
+  setScope: (scope: QuickPanelScope, options?: { emit?: boolean; allowNonCycle?: boolean }) => void;
   /** Set query programmatically */
   setQuery: (query: string, options?: { emit?: boolean }) => void;
   /** Clear the input */
@@ -247,14 +247,17 @@ export function createSearchInput(options: SearchInputOptions): SearchInputManag
   // State Mutators
   // --------------------------------------------------------
 
-  function setScope(next: QuickPanelScope, opts: { emit?: boolean } = {}): void {
+  function setScope(
+    next: QuickPanelScope,
+    opts: { emit?: boolean; allowNonCycle?: boolean } = {},
+  ): void {
     if (disposed) return;
 
     const normalized = normalizeQuickPanelScope(next, DEFAULT_SCOPE);
     if (state.scope === normalized) return;
 
     // Only allow scopes in the cycle list
-    if (!scopes.includes(normalized)) return;
+    if (opts.allowNonCycle !== true && !scopes.includes(normalized)) return;
 
     state = { ...state, scope: normalized };
     render();
@@ -303,9 +306,10 @@ export function createSearchInput(options: SearchInputOptions): SearchInputManag
     const parsed = parseScopePrefixedQuery(input.value, state.scope);
 
     if (parsed.consumedPrefix) {
-      // Apply scope change if available
-      if (scopes.includes(parsed.scope) && parsed.scope !== state.scope) {
-        setScope(parsed.scope, { emit: false });
+      // Apply scope change even if it's not part of the cycle list.
+      // Some scopes are designed to be prefix-only (e.g. web search engines).
+      if (parsed.scope !== state.scope) {
+        setScope(parsed.scope, { emit: false, allowNonCycle: true });
       }
 
       // Consume the prefix from the visible input

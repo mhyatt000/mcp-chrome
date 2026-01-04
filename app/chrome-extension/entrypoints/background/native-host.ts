@@ -359,7 +359,7 @@ export function connectNativeHost(port: number = NATIVE_HOST.DEFAULT_PORT): bool
       } else if (message.type === NativeMessageType.CALL_TOOL && message.requestId) {
         const requestId = message.requestId;
         try {
-          const result = await handleCallTool(message.payload);
+          const result = await handleCallTool(message.payload, { source: 'native_host' });
           nativePort?.postMessage({
             responseToRequestId: requestId,
             payload: {
@@ -490,7 +490,7 @@ export const initNativeHostListener = () => {
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     // Allow UI to call tools directly
     if (message && message.type === 'call_tool' && message.name) {
-      handleCallTool({ name: message.name, args: message.args })
+      handleCallTool({ name: message.name, args: message.args }, { source: 'extension_ui' })
         .then((res) => sendResponse({ success: true, result: res }))
         .catch((err) =>
           sendResponse({ success: false, error: err instanceof Error ? err.message : String(err) }),

@@ -21,8 +21,8 @@ import {
 } from '@/entrypoints/background/record-replay-v3';
 
 import { PluginRegistry } from '@/entrypoints/background/record-replay-v3/engine/plugins/registry';
-import { ifHandler } from '@/entrypoints/background/record-replay/actions/handlers/control-flow';
-import { delayHandler } from '@/entrypoints/background/record-replay/actions/handlers/delay';
+import { ifHandler } from '@/entrypoints/background/replay-actions/handlers/control-flow';
+import { delayHandler } from '@/entrypoints/background/replay-actions/handlers/delay';
 import { adaptV2ActionHandlerToV3NodeDefinition } from '@/entrypoints/background/record-replay-v3/engine/plugins/v2-action-adapter';
 import { createV3E2EHarness, type V3E2EHarness, type RpcClient } from './v3-e2e-harness';
 

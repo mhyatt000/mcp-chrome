@@ -57,7 +57,7 @@ vi.mock('@/shared/selector', async (importOriginal) => {
 import { createMockExecCtx } from './_test-helpers';
 import { createHybridConfig } from '@/entrypoints/background/record-replay/engine/execution-mode';
 import { HybridStepExecutor } from '@/entrypoints/background/record-replay/engine/runners/step-executor';
-import { createReplayActionRegistry } from '@/entrypoints/background/record-replay/actions';
+import { createReplayActionRegistry } from '@/entrypoints/background/replay-actions';
 
 // =============================================================================
 // Test Constants

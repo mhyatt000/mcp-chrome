@@ -7,6 +7,8 @@
 
 import {
   BACKGROUND_MESSAGE_TYPES,
+  type QuickPanelBookmarkRemoveMessage,
+  type QuickPanelBookmarkRemoveResponse,
   type QuickPanelBookmarksQueryMessage,
   type QuickPanelBookmarksQueryResponse,
   type QuickPanelBookmarkSummary,
@@ -83,6 +85,36 @@ async function handleBookmarksQuery(
   }
 }
 
+async function handleBookmarkRemove(
+  message: QuickPanelBookmarkRemoveMessage,
+  sender: chrome.runtime.MessageSender,
+): Promise<QuickPanelBookmarkRemoveResponse> {
+  try {
+    // Validate sender
+    if (!sender.tab?.id) {
+      return { success: false, error: 'Quick Panel request must originate from a tab.' };
+    }
+
+    const bookmarkId = normalizeString(message.payload?.bookmarkId).trim();
+    if (!bookmarkId) {
+      return { success: false, error: 'Invalid bookmarkId' };
+    }
+
+    // Safety: only allow deleting URL bookmarks (not folders).
+    const nodes = await chrome.bookmarks.get(bookmarkId);
+    const node = Array.isArray(nodes) ? nodes[0] : null;
+    if (!node || typeof node.url !== 'string' || !node.url.trim()) {
+      return { success: false, error: 'Bookmark not found or not a URL bookmark' };
+    }
+
+    await chrome.bookmarks.remove(bookmarkId);
+    return { success: true };
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} Error removing bookmark:`, err);
+    return { success: false, error: safeErrorMessage(err) || 'Failed to remove bookmark' };
+  }
+}
+
 // ============================================================
 // Initialization
 // ============================================================
@@ -100,6 +132,10 @@ export function initQuickPanelBookmarksHandler(): void {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type === BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_BOOKMARKS_QUERY) {
       handleBookmarksQuery(message as QuickPanelBookmarksQueryMessage, sender).then(sendResponse);
+      return true; // Will respond asynchronously
+    }
+    if (message?.type === BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_BOOKMARK_REMOVE) {
+      handleBookmarkRemove(message as QuickPanelBookmarkRemoveMessage, sender).then(sendResponse);
       return true; // Will respond asynchronously
     }
     return false;

@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent Multi-Session Analyzer (Precision Date)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              slate: {
+                50: '#f8fafc',
+                100: '#f1f5f9',
+                200: '#e2e8f0',
+                300: '#cbd5e1',
+                400: '#94a3b8',
+                500: '#64748b',
+                600: '#475569',
+                700: '#334155',
+                800: '#1e293b',
+                900: '#0f172a',
+              },
+              primary: {
+                50: '#eff6ff',
+                100: '#dbeafe',
+                500: '#3b82f6',
+                600: '#2563eb',
+                700: '#1d4ed8',
+              },
+            },
+            fontFamily: { sans: ['Inter', 'sans-serif'], mono: ['JetBrains Mono', 'monospace'] },
+          },
+        },
+      };
+    </script>
+    <style>
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 3px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+      }
+      body {
+        font-family: 'Inter', sans-serif;
+      }
+      .sidebar-item.active {
+        background-color: #eff6ff;
+        border-right: 3px solid #3b82f6;
+        color: #1e40af;
+      }
+    </style>
+  </head>
+  <body class="bg-slate-50 text-slate-800 antialiased h-screen flex overflow-hidden">
+    <!-- 左侧侧边栏 -->
+    <aside class="w-72 bg-white border-r border-slate-200 flex flex-col flex-shrink-0 z-20">
+      <div class="h-16 flex items-center px-4 border-b border-slate-200 bg-slate-50">
+        <svg
+          class="w-6 h-6 text-primary-600 mr-2"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+          ></path>
+        </svg>
+        <h1 class="font-bold text-slate-800 tracking-tight">Session Analyzer</h1>
+      </div>
+
+      <!-- 文件夹上传区 -->
+      <div class="p-4 border-b border-slate-200">
+        <label
+          class="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100 hover:border-primary-400 transition-colors group"
+        >
+          <div class="flex flex-col items-center justify-center pt-2 pb-3">
+            <svg
+              class="w-6 h-6 text-slate-400 group-hover:text-primary-500 mb-1"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+              ></path>
+            </svg>
+            <p class="text-xs text-slate-500 font-medium">点击选择文件夹</p>
+            <p class="text-[10px] text-slate-400">支持批量读取</p>
+          </div>
+          <input id="dirInput" type="file" class="hidden" webkitdirectory directory multiple />
+        </label>
+      </div>
+
+      <!-- 会话列表 -->
+      <div class="flex-1 overflow-y-auto" id="sessionList">
+        <div class="p-8 text-center text-sm text-slate-400">
+          暂无会话数据<br />请上传文件夹或文件
+        </div>
+      </div>
+
+      <!-- 底部全局统计入口 -->
+      <div
+        class="p-3 border-t border-slate-200 bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
+        id="btnShowDashboard"
+      >
+        <div class="flex items-center gap-3">
+          <div
+            class="w-8 h-8 rounded-full bg-primary-100 text-primary-600 flex items-center justify-center"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+              ></path>
+            </svg>
+          </div>
+          <div>
+            <div class="text-xs font-bold text-slate-700">全局统计</div>
+            <div class="text-[10px] text-slate-500">查看汇总数据</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 主内容区 -->
+    <main class="flex-1 flex flex-col h-full bg-white relative overflow-hidden">
+      <!-- Dashboard (默认显示) -->
+      <div
+        id="dashboardView"
+        class="absolute inset-0 z-10 bg-slate-50 overflow-y-auto p-10 flex flex-col items-center"
+      >
+        <div class="max-w-5xl w-full">
+          <h2 class="text-3xl font-bold text-slate-900 mb-8">分析报告概览</h2>
+
+          <!-- 核心指标 -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <div class="text-slate-500 text-sm font-medium mb-1">会话总数 (Files)</div>
+              <div class="text-4xl font-bold text-slate-900" id="totalSessions">0</div>
+            </div>
+            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <div class="text-slate-500 text-sm font-medium mb-1">LLM 请求总数</div>
+              <div class="text-4xl font-bold text-blue-600" id="totalRequests">0</div>
+            </div>
+            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <div class="text-slate-500 text-sm font-medium mb-1">总 Token 消耗</div>
+              <div class="text-4xl font-bold text-emerald-600" id="totalTokens">0</div>
+              <div class="text-xs text-slate-400 mt-2">包含 Input + Output</div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
+            <!-- 模型分布统计 -->
+            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <svg
+                  class="w-5 h-5 text-purple-500"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
+                  ></path>
+                </svg>
+                模型分布 (Models)
+              </h3>
+              <div id="modelStatsContainer" class="space-y-3 max-h-80 overflow-y-auto pr-2">
+                <div class="text-slate-400 text-sm italic">暂无数据</div>
+              </div>
+            </div>
+
+            <!-- 每日活动统计 -->
+            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <svg
+                  class="w-5 h-5 text-orange-500"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                  ></path>
+                </svg>
+                每日活动 (Daily Activity)
+              </h3>
+              <!-- 表头 -->
+              <div
+                class="flex text-xs font-semibold text-slate-400 border-b border-slate-100 pb-2 mb-2 px-2"
+              >
+                <div class="w-24">日期</div>
+                <div class="w-24 text-center">活跃会话</div>
+                <div class="w-20 text-center">Requests</div>
+                <div class="flex-1 text-right">Tokens</div>
+              </div>
+              <div id="dailyStatsContainer" class="space-y-1 max-h-80 overflow-y-auto pr-2">
+                <div class="text-slate-400 text-sm italic">暂无数据</div>
+              </div>
+            </div>
+          </div>
+
+          <h3 class="text-xl font-bold text-slate-800 mb-4">使用提示</h3>
+          <ul class="list-disc pl-5 space-y-2 text-slate-600 text-sm">
+            <li>点击左上角的区域选择包含日志的<b>文件夹</b>。</li>
+            <li>系统会自动扫描文件，并按<b>单条消息的时间戳</b>进行精准的每日统计。</li>
+            <li>如果一个 Session 跨越了两天，它的请求数会分别计入这两天。</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- 聊天详情视图 (默认隐藏) -->
+      <div id="chatView" class="absolute inset-0 z-0 bg-slate-50 flex flex-col hidden">
+        <!-- 顶部标题 -->
+        <header
+          class="h-16 bg-white border-b border-slate-200 flex items-center px-6 justify-between flex-shrink-0"
+        >
+          <div class="flex flex-col overflow-hidden">
+            <h2 class="font-bold text-slate-900 text-lg truncate" id="currentFileName"
+              >Session Name</h2
+            >
+            <div
+              class="flex items-center gap-3 text-xs text-slate-500"
+              id="currentFileStatsWrapper"
+            >
+              <!-- JS 填充详情 -->
+            </div>
+          </div>
+        </header>
+
+        <!-- 滚动消息区 -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-6" id="messageList">
+          <!-- 消息动态插入 -->
+        </div>
+      </div>
+    </main>
+
+    <script>
+      // --- 状态管理 ---
+      const state = {
+        sessions: [],
+        // globalStats 增加 daily 结构
+        // daily: { "2023-10-01": { requests: 0, tokens: 0, activeSessionIds: Set() } }
+        globalStats: { sessions: 0, requests: 0, tokens: 0, models: {}, daily: {} },
+        currentId: null,
+      };
+
+      const dirInput = document.getElementById('dirInput');
+      const sessionListEl = document.getElementById('sessionList');
+      const dashboardView = document.getElementById('dashboardView');
+      const chatView = document.getElementById('chatView');
+      const btnShowDashboard = document.getElementById('btnShowDashboard');
+      const modelStatsContainer = document.getElementById('modelStatsContainer');
+      const dailyStatsContainer = document.getElementById('dailyStatsContainer');
+
+      // --- 事件监听 ---
+      dirInput.addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files);
+        if (files.length === 0) return;
+
+        // 重置状态
+        state.sessions = [];
+        state.globalStats = { sessions: 0, requests: 0, tokens: 0, models: {}, daily: {} };
+        sessionListEl.innerHTML =
+          '<div class="p-4 text-center text-sm text-slate-500">正在解析...</div>';
+
+        await processFiles(files);
+
+        updateDashboard();
+        renderSidebar();
+        showDashboard();
+      });
+
+      btnShowDashboard.addEventListener('click', showDashboard);
+
+      // --- 核心逻辑 ---
+
+      async function processFiles(files) {
+        const validFiles = files.filter((f) => !f.name.startsWith('.'));
+
+        const promises = validFiles.map(async (file) => {
+          let text = '';
+          try {
+            text = await readFileAsText(file);
+          } catch (err) {
+            return null;
+          }
+
+          // 核心解析
+          const parseResult = parseSessionContent(text);
+
+          // 如果没有有效消息，跳过此文件
+          if (parseResult.messages.length === 0 && parseResult.stats.requests === 0) return null;
+
+          // 提取会话开始时间 (基于第一条消息)
+          const startTime =
+            parseResult.messages.length > 0 && parseResult.messages[0].timestamp
+              ? new Date(parseResult.messages[0].timestamp)
+              : new Date();
+
+          return {
+            id: Math.random().toString(36).substr(2, 9),
+            fileName: file.name,
+            path: file.webkitRelativePath || file.name,
+            messages: parseResult.messages,
+            stats: parseResult.stats,
+            startTime: startTime,
+          };
+        });
+
+        const results = await Promise.all(promises);
+        state.sessions = results.filter((s) => s !== null);
+
+        // --- 全局统计聚合 ---
+        state.sessions.forEach((s) => {
+          // 1. 基础汇总
+          state.globalStats.sessions++;
+          state.globalStats.requests += s.stats.requests;
+          state.globalStats.tokens += s.stats.tokens;
+
+          // 2. 模型聚合
+          for (const [model, count] of Object.entries(s.stats.models)) {
+            if (!state.globalStats.models[model]) state.globalStats.models[model] = 0;
+            state.globalStats.models[model] += count;
+          }
+
+          // 3. 每日活动聚合 (下钻到 Message 级别)
+          // 此时 s.messages 已经是经过过滤（去除了 0/0 usage）的干净数据
+          s.messages.forEach((msg) => {
+            // 仅统计 Assistant 的请求
+            if (msg.type === 'assistant') {
+              // 确定该消息属于哪一天
+              let msgDateObj;
+              if (msg.timestamp) {
+                msgDateObj = new Date(msg.timestamp);
+              } else {
+                // 兜底：如果单条消息没时间，用 Session 开始时间
+                msgDateObj = s.startTime;
+              }
+
+              // 格式化为 YYYY-MM-DD
+              const dateKey = msgDateObj
+                .toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+                .replace(/\//g, '-');
+
+              // 初始化当天的统计桶
+              if (!state.globalStats.daily[dateKey]) {
+                state.globalStats.daily[dateKey] = {
+                  requests: 0,
+                  tokens: 0,
+                  activeSessionIds: new Set(), // 使用 Set 来去重统计“活跃会话数”
+                };
+              }
+
+              const dayStat = state.globalStats.daily[dateKey];
+
+              // 标记该 Session 在这一天是活跃的
+              dayStat.activeSessionIds.add(s.id);
+
+              // 统计逻辑 (与 parseSessionContent 保持一致)
+              const hasUsage = msg.message && msg.message.usage;
+              if (hasUsage) {
+                dayStat.requests++;
+                dayStat.tokens +=
+                  (msg.message.usage.input_tokens || 0) + (msg.message.usage.output_tokens || 0);
+              } else {
+                // 兜底
+                dayStat.requests++;
+              }
+            }
+          });
+        });
+      }
+
+      function readFileAsText(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target.result);
+          reader.onerror = reject;
+          reader.readAsText(file);
+        });
+      }
+
+      function parseSessionContent(content) {
+        const lines = content.split('\n');
+        const messages = [];
+        let requests = 0;
+        let tokens = 0;
+        const models = {};
+
+        lines.forEach((line) => {
+          const trimmed = line.trim();
+          if (!trimmed) return;
+          try {
+            const json = JSON.parse(trimmed);
+            let isNoise = false;
+
+            // --- 1. 过滤 Assistant 的无效 usage (0/0) ---
+            // 这是本次修改的核心：如果 usage 存在且全为 0，视为噪音
+            if (json.type === 'assistant') {
+              if (json.message && json.message.usage) {
+                const u = json.message.usage;
+                if (u.input_tokens === 0 && u.output_tokens === 0) {
+                  isNoise = true;
+                }
+              }
+            }
+
+            // --- 2. 过滤 User 的噪音 (系统指令) ---
+            const rawContent = json.message?.content;
+            if (json.type === 'user' && typeof rawContent === 'string') {
+              if (
+                rawContent.includes('<local-command-stdout>') ||
+                rawContent.includes('<command-name>')
+              ) {
+                isNoise = true;
+              }
+            }
+
+            // --- 3. 有效消息处理 ---
+            if ((json.type === 'user' || json.type === 'assistant') && !isNoise) {
+              messages.push(json); // 存入消息列表
+
+              // 仅针对 Assistant 进行统计
+              if (json.type === 'assistant') {
+                const hasUsage = json.message && json.message.usage;
+
+                if (hasUsage) {
+                  requests++;
+                  tokens +=
+                    (json.message.usage.input_tokens || 0) +
+                    (json.message.usage.output_tokens || 0);
+                } else {
+                  // 兼容没有 usage 字段的情况，仍算作一次请求
+                  requests++;
+                }
+
+                // 统计模型
+                let modelId = 'unknown';
+                if (json.message && json.message.model) modelId = json.message.model;
+                else if (json.model) modelId = json.model;
+
+                if (!models[modelId]) models[modelId] = 0;
+                models[modelId]++;
+              }
+            }
+          } catch (e) {}
+        });
+
+        return { messages, stats: { requests, tokens, models } };
+      }
+
+      // --- 渲染逻辑 ---
+
+      function updateDashboard() {
+        document.getElementById('totalSessions').textContent = state.globalStats.sessions;
+        document.getElementById('totalRequests').textContent = state.globalStats.requests;
+        const t = state.globalStats.tokens;
+        const tStr = t > 1000 ? (t / 1000).toFixed(1) + 'k' : t;
+        document.getElementById('totalTokens').textContent = tStr;
+
+        // 1. 渲染模型分布
+        modelStatsContainer.innerHTML = '';
+        const models = state.globalStats.models;
+        const sortedModels = Object.entries(models).sort((a, b) => b[1] - a[1]);
+
+        if (sortedModels.length === 0) {
+          modelStatsContainer.innerHTML =
+            '<div class="text-slate-400 text-sm italic">未检测到模型信息</div>';
+        } else {
+          sortedModels.forEach(([modelName, count]) => {
+            const percent = Math.round((count / state.globalStats.requests) * 100) || 0;
+            const div = document.createElement('div');
+            div.className =
+              'flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100';
+            div.innerHTML = `
+                        <div class="flex-1 min-w-0">
+                            <div class="flex justify-between items-baseline mb-1">
+                                <span class="font-mono text-sm font-medium text-slate-700 truncate" title="${modelName}">${modelName}</span>
+                                <span class="text-xs font-bold text-slate-900">${count}</span>
+                            </div>
+                            <div class="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                                <div class="bg-purple-500 h-1.5 rounded-full" style="width: ${percent}%"></div>
+                            </div>
+                        </div>
+                        <span class="text-[10px] text-slate-400 w-8 text-right">${percent}%</span>
+                    `;
+            modelStatsContainer.appendChild(div);
+          });
+        }
+
+        // 2. 渲染每日活动
+        dailyStatsContainer.innerHTML = '';
+        const daily = state.globalStats.daily;
+        // 按日期倒序 (最新的在上面)
+        const sortedDates = Object.keys(daily).sort().reverse();
+
+        if (sortedDates.length === 0) {
+          dailyStatsContainer.innerHTML =
+            '<div class="text-slate-400 text-sm italic">暂无日期数据</div>';
+        } else {
+          const maxReq = Math.max(...sortedDates.map((d) => daily[d].requests)) || 1;
+
+          sortedDates.forEach((date) => {
+            const d = daily[date];
+            const activeSessionCount = d.activeSessionIds.size; // 使用 Set 大小
+            const heatWidth = Math.max(5, Math.round((d.requests / maxReq) * 100));
+            const tVal = d.tokens > 1000 ? (d.tokens / 1000).toFixed(1) + 'k' : d.tokens;
+
+            const div = document.createElement('div');
+            div.className =
+              'flex items-center p-2 hover:bg-slate-50 rounded-md transition-colors text-sm border-b border-slate-50 last:border-0';
+            div.innerHTML = `
+                        <div class="w-24 font-mono text-slate-600">${date}</div>
+                        <div class="w-24 text-center text-slate-500" title="当日有消息产生的会话数">${activeSessionCount}</div>
+                        <div class="w-20 text-center font-bold text-blue-600 relative group cursor-default">
+                            ${d.requests}
+                            <!-- 热度条背景 -->
+                            <div class="absolute bottom-0 left-2 right-2 h-0.5 bg-blue-100 rounded-full overflow-hidden">
+                                <div class="bg-blue-500 h-full" style="width: ${heatWidth}%"></div>
+                            </div>
+                        </div>
+                        <div class="flex-1 text-right font-mono text-emerald-600">${tVal}</div>
+                    `;
+            dailyStatsContainer.appendChild(div);
+          });
+        }
+      }
+
+      function renderSidebar() {
+        sessionListEl.innerHTML = '';
+        const sortedSessions = [...state.sessions].sort((a, b) => b.startTime - a.startTime); // 侧边栏按时间倒序
+
+        sortedSessions.forEach((session) => {
+          const div = document.createElement('div');
+          div.className =
+            'sidebar-item p-3 border-b border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors group';
+          div.dataset.id = session.id;
+
+          const displayName =
+            session.fileName.length > 25 ? '...' + session.fileName.slice(-22) : session.fileName;
+          const timeStr = session.startTime.toLocaleDateString();
+
+          div.innerHTML = `
+                    <div class="flex justify-between items-start mb-1">
+                        <span class="font-medium text-sm text-slate-700 group-hover:text-slate-900 truncate" title="${session.path}">${displayName}</span>
+                        <span class="text-[10px] text-slate-400 whitespace-nowrap ml-1">${timeStr}</span>
+                    </div>
+                    <div class="flex items-center gap-3 text-xs text-slate-400">
+                        <span class="flex items-center gap-1" title="消息条数">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+                            ${session.messages.length}
+                        </span>
+                        <span class="flex items-center gap-1 ${session.stats.requests > 0 ? 'text-blue-500 font-bold' : ''}" title="API请求次数">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                            ${session.stats.requests}
+                        </span>
+                    </div>
+                `;
+          div.addEventListener('click', () => loadSession(session.id));
+          sessionListEl.appendChild(div);
+        });
+      }
+
+      function showDashboard() {
+        dashboardView.classList.remove('hidden');
+        chatView.classList.add('hidden');
+        document.querySelectorAll('.sidebar-item').forEach((el) => el.classList.remove('active'));
+      }
+
+      function loadSession(id) {
+        const session = state.sessions.find((s) => s.id === id);
+        if (!session) return;
+        state.currentId = id;
+        dashboardView.classList.add('hidden');
+        chatView.classList.remove('hidden');
+
+        document.getElementById('currentFileName').textContent = session.fileName;
+
+        const t = session.stats.tokens;
+        const tStr = t > 1000 ? (t / 1000).toFixed(1) + 'k' : t;
+
+        let topModel = 'N/A';
+        let maxCount = 0;
+        for (const [m, c] of Object.entries(session.stats.models)) {
+          if (c > maxCount) {
+            maxCount = c;
+            topModel = m;
+          }
+        }
+
+        const container = document.getElementById('currentFileStatsWrapper');
+        container.innerHTML = `
+                <span class="flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg> Requests: ${session.stats.requests}</span>
+                <span class="w-px h-3 bg-slate-300"></span>
+                <span>Tokens: ${tStr}</span>
+                <span class="w-px h-3 bg-slate-300"></span>
+                <span class="font-mono text-[10px] bg-slate-100 px-2 py-0.5 rounded border border-slate-200" title="主要模型">${topModel}</span>
+            `;
+
+        document.querySelectorAll('.sidebar-item').forEach((el) => {
+          if (el.dataset.id === id) el.classList.add('active');
+          else el.classList.remove('active');
+        });
+        renderChatMessages(session.messages);
+      }
+
+      function renderChatMessages(messages) {
+        const container = document.getElementById('messageList');
+        container.innerHTML = '';
+
+        messages.forEach((msg) => {
+          const isUser = msg.type === 'user';
+          const dateObj = msg.timestamp ? new Date(msg.timestamp) : null;
+          const dateStr = dateObj
+            ? `${dateObj.getHours().toString().padStart(2, '0')}:${dateObj.getMinutes().toString().padStart(2, '0')}:${dateObj.getSeconds().toString().padStart(2, '0')}`
+            : '';
+
+          let tokenInfo = '';
+          if (!isUser && msg.message?.usage) {
+            const t = msg.message.usage;
+            const total = (t.input_tokens || 0) + (t.output_tokens || 0);
+            if (total > 0)
+              tokenInfo = `<span class="ml-2 text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 flex items-center gap-1"><svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>${total}</span>`;
+          }
+
+          const userAvatar = `
+                    <div class="flex-shrink-0 w-9 h-9 rounded-full bg-white flex items-center justify-center border border-slate-200 shadow-sm">
+                        <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                    </div>`;
+
+          const aiAvatar = `
+                    <div class="flex-shrink-0 w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center shadow-md ring-2 ring-slate-50">
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    </div>`;
+
+          const row = document.createElement('div');
+          row.className = `flex gap-4 ${isUser ? 'flex-row-reverse' : 'flex-row'}`;
+
+          const bubbleClass = isUser
+            ? 'bg-white border border-slate-200 shadow-sm text-slate-800 rounded-2xl rounded-tr-sm'
+            : 'bg-white border border-slate-200 shadow-sm text-slate-800 rounded-2xl rounded-tl-sm';
+
+          const contentHtml = formatContent(msg);
+
+          row.innerHTML = `
+                    ${isUser ? userAvatar : aiAvatar}
+                    <div class="flex flex-col max-w-[85%] lg:max-w-[75%] min-w-0">
+                        <div class="flex items-center gap-2 mb-1 px-1 ${isUser ? 'justify-end' : 'justify-start'}">
+                            <span class="text-xs font-bold text-slate-700">${isUser ? 'User' : 'Assistant'}</span>
+                            <span class="text-[10px] text-slate-400 font-mono pt-0.5">${dateStr}</span>
+                            ${tokenInfo}
+                        </div>
+                        <div class="p-4 ${bubbleClass} text-sm leading-relaxed overflow-hidden hover:shadow-md transition-shadow duration-200">
+                            ${contentHtml}
+                        </div>
+                    </div>
+                `;
+          container.appendChild(row);
+        });
+      }
+
+      function formatContent(msg) {
+        const raw = msg.message?.content;
+        if (!raw) return '<span class="text-slate-400 italic">Empty message</span>';
+        let html = '';
+        if (typeof raw === 'string') {
+          html = `<div class="whitespace-pre-wrap break-words text-slate-700">${escapeHtml(raw)}</div>`;
+        } else if (Array.isArray(raw)) {
+          raw.forEach((block, idx) => {
+            const mt = idx > 0 ? 'mt-4' : '';
+            if (block.type === 'text') {
+              html += `<div class="whitespace-pre-wrap break-words ${mt} text-slate-700">${escapeHtml(block.text)}</div>`;
+            } else if (block.type === 'tool_use') {
+              html += `
+                            <div class="rounded-md border border-amber-200 bg-amber-50 overflow-hidden ${mt} text-xs font-mono group">
+                                <div class="bg-amber-100/50 px-3 py-2 border-b border-amber-200 flex items-center justify-between">
+                                    <div class="flex items-center gap-2 text-amber-800 font-bold">
+                                        <svg class="w-3.5 h-3.5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                                        Tool: ${escapeHtml(block.name)}
+                                    </div>
+                                    <span class="text-amber-600/70 select-all">${escapeHtml(block.id)}</span>
+                                </div>
+                                <div class="p-3 bg-white overflow-x-auto">
+                                    <pre class="text-slate-600">${escapeHtml(JSON.stringify(block.input, null, 2))}</pre>
+                                </div>
+                            </div>`;
+            }
+          });
+        } else {
+          html = `<pre class="text-xs bg-slate-50 p-2 rounded border border-slate-200 overflow-x-auto text-slate-600">${escapeHtml(JSON.stringify(raw, null, 2))}</pre>`;
+        }
+        return html;
+      }
+
+      function escapeHtml(text) {
+        if (text == null) return '';
+        if (typeof text !== 'string') text = String(text);
+        return text
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+    </script>
+  </body>
+</html>

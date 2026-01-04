@@ -10,6 +10,8 @@ interface NetworkCaptureToolParams {
   action: 'start' | 'stop';
   needResponseBody?: boolean;
   url?: string;
+  tabId?: number;
+  windowId?: number;
   maxCaptureTime?: number;
   inactivityTimeout?: number;
   includeStatic?: boolean;
@@ -48,10 +50,7 @@ function decorateJsonResult(result: ToolResult, extra: Record<string, unknown>):
  * Check if debugger-based capture is active
  */
 function isDebuggerCaptureActive(): boolean {
-  const captureData = (
-    networkDebuggerStartTool as unknown as { captureData?: Map<number, unknown> }
-  ).captureData;
-  return captureData instanceof Map && captureData.size > 0;
+  return networkDebuggerStartTool.captureData.size > 0;
 }
 
 /**
@@ -108,6 +107,8 @@ class NetworkCaptureTool extends BaseBrowserToolExecutor {
 
     const result = await delegate.execute({
       url: args.url,
+      tabId: args.tabId,
+      windowId: args.windowId,
       maxCaptureTime: args.maxCaptureTime,
       inactivityTimeout: args.inactivityTimeout,
       includeStatic: args.includeStatic,
@@ -146,7 +147,7 @@ class NetworkCaptureTool extends BaseBrowserToolExecutor {
 
     const delegateStop =
       backendToStop === 'debugger' ? networkDebuggerStopTool : networkCaptureStopTool;
-    const result = await delegateStop.execute();
+    const result = await delegateStop.execute({ tabId: args.tabId, windowId: args.windowId });
 
     return decorateJsonResult(result, {
       backend: backendToStop,

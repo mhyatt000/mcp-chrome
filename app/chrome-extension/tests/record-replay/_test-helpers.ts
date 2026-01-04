@@ -7,7 +7,7 @@
 
 import { vi } from 'vitest';
 import type { ExecCtx } from '@/entrypoints/background/record-replay/nodes/types';
-import type { ActionExecutionContext } from '@/entrypoints/background/record-replay/actions/types';
+import type { ActionExecutionContext } from '@/entrypoints/background/replay-actions/types';
 
 /**
  * Create a minimal ExecCtx for testing

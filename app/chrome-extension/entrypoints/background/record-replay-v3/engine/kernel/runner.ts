@@ -140,6 +140,73 @@ function deepClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function jsonValueEquals(a: JsonValue, b: JsonValue): boolean {
+  if (a === b) return true;
+
+  const aIsArray = Array.isArray(a);
+  const bIsArray = Array.isArray(b);
+  if (aIsArray || bIsArray) {
+    if (!aIsArray || !bIsArray) return false;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!jsonValueEquals(a[i] as JsonValue, b[i] as JsonValue)) return false;
+    }
+    return true;
+  }
+
+  const aIsObj = isRecord(a);
+  const bIsObj = isRecord(b);
+  if (aIsObj || bIsObj) {
+    if (!aIsObj || !bIsObj) return false;
+    const aKeys = Object.keys(a);
+    const bKeys = Object.keys(b);
+    if (aKeys.length !== bKeys.length) return false;
+    for (const k of aKeys) {
+      if (!Object.prototype.hasOwnProperty.call(b, k)) return false;
+      if (!jsonValueEquals(a[k] as JsonValue, (b as Record<string, unknown>)[k] as JsonValue))
+        return false;
+    }
+    return true;
+  }
+
+  return false;
+}
+
+function diffVarsPatch(
+  from: Record<string, JsonValue>,
+  to: Record<string, JsonValue>,
+): VarsPatchOp[] {
+  const keys = Array.from(new Set([...Object.keys(from), ...Object.keys(to)])).sort();
+  const patch: VarsPatchOp[] = [];
+
+  for (const key of keys) {
+    const fromHas = Object.prototype.hasOwnProperty.call(from, key);
+    const toHas = Object.prototype.hasOwnProperty.call(to, key);
+
+    if (!toHas) {
+      if (fromHas) patch.push({ op: 'delete', name: key });
+      continue;
+    }
+
+    const toVal = to[key];
+    if (!fromHas) {
+      patch.push({ op: 'set', name: key, value: toVal });
+      continue;
+    }
+
+    const fromVal = from[key];
+    if (!jsonValueEquals(fromVal, toVal)) {
+      patch.push({ op: 'set', name: key, value: toVal });
+    }
+  }
+
+  return patch;
+}
+
 function errorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
   if (err && typeof err === 'object' && 'message' in err)
@@ -1625,7 +1692,24 @@ class StorageBackedRunRunner implements RunRunner {
 
       // Restore vars if isolated mode was activated
       if (varsModified) {
+        const isolatedVars = this.state.vars;
         this.state.vars = savedVars;
+
+        // Best-effort: keep vars.patch event stream consistent with runtime state.
+        const revertPatch = diffVarsPatch(isolatedVars, savedVars);
+        if (revertPatch.length > 0) {
+          try {
+            await this.queue.run(() =>
+              this.env.events.append({
+                runId: this.runId,
+                type: 'vars.patch',
+                patch: revertPatch,
+              } as RunEventInput),
+            );
+          } catch {
+            // Avoid overriding the original control/node error.
+          }
+        }
       }
     }
   }

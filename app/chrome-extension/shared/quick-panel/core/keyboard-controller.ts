@@ -188,6 +188,25 @@ export function createKeyboardController(
   }
 
   /**
+   * Best-effort selection state for text inputs.
+   * Used to decide when ArrowLeft/ArrowRight should act as panel navigation without breaking typing UX.
+   */
+  function getTextInputSelection(
+    target: EventTarget | null,
+  ): { valueLength: number; start: number; end: number } | null {
+    if (!target) return null;
+
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+      const start = target.selectionStart;
+      const end = target.selectionEnd;
+      if (typeof start !== 'number' || typeof end !== 'number') return null;
+      return { valueLength: target.value.length, start, end };
+    }
+
+    return null;
+  }
+
+  /**
    * Check if we should intercept this key event
    */
   function shouldInterceptKey(event: KeyboardEvent): boolean {
@@ -195,13 +214,32 @@ export function createKeyboardController(
     const isInput = isInputElement(event.target);
     const actionPanelOpen = options.isActionPanelOpen?.() ?? false;
 
-    // ArrowLeft/ArrowRight: only intercept when action panel is open
-    // Otherwise let the input handle cursor movement
+    // ArrowLeft/ArrowRight: avoid breaking text cursor movement in inputs.
+    // - When action panel is open: always intercept for panel navigation.
+    // - In inputs: intercept only when cursor is at boundary (start/end), so Arrow keys can be used as panel shortcuts.
     if (key === 'ArrowLeft' || key === 'ArrowRight') {
-      if (isInput && !actionPanelOpen) {
-        return false; // Let input handle cursor movement
+      if (actionPanelOpen) {
+        return true;
       }
-      return actionPanelOpen; // Only intercept if action panel is open
+
+      if (isInput) {
+        const sel = getTextInputSelection(event.target);
+        if (!sel) return false;
+
+        const inputEmpty = options.isInputEmpty?.() ?? sel.valueLength === 0;
+        const collapsed = sel.start === sel.end;
+
+        if (key === 'ArrowLeft') {
+          // Treat ArrowLeft as "back" only when input is empty and cursor is at start.
+          return inputEmpty && collapsed && sel.start === 0;
+        }
+
+        // Treat ArrowRight as "open actions" only when cursor is at end.
+        return collapsed && sel.end === sel.valueLength;
+      }
+
+      // Not in an input: allow ArrowLeft/ArrowRight as panel navigation shortcuts.
+      return true;
     }
 
     // Always intercept certain keys even in input fields
@@ -318,6 +356,17 @@ export function createKeyboardController(
       event.preventDefault();
       event.stopPropagation();
       options.onOpenActionPanel?.();
+      return;
+    }
+
+    // Arrow Left - Back (when input is empty)
+    if (key === 'ArrowLeft') {
+      const inputEmpty = options.isInputEmpty?.() ?? false;
+      if (inputEmpty) {
+        event.preventDefault();
+        event.stopPropagation();
+        options.onBack?.();
+      }
       return;
     }
 

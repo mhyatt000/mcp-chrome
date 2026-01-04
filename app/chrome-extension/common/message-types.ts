@@ -61,6 +61,8 @@ export const BACKGROUND_MESSAGE_TYPES = {
   // Element picker (human-in-the-loop element selection)
   ELEMENT_PICKER_UI_EVENT: 'element_picker_ui_event',
   ELEMENT_PICKER_FRAME_EVENT: 'element_picker_frame_event',
+  // Tool approval (human-in-the-loop confirmation for risky tool calls)
+  TOOL_APPROVAL_UI_EVENT: 'tool_approval_ui_event',
   // Web editor (in-page visual editing)
   WEB_EDITOR_TOGGLE: 'web_editor_toggle',
   WEB_EDITOR_APPLY: 'web_editor_apply',
@@ -94,11 +96,60 @@ export const BACKGROUND_MESSAGE_TYPES = {
   QUICK_PANEL_TAB_SET_MUTED: 'quick_panel_tab_set_muted',
   // Quick Panel Search - Bookmarks bridge
   QUICK_PANEL_BOOKMARKS_QUERY: 'quick_panel_bookmarks_query',
+  QUICK_PANEL_BOOKMARK_REMOVE: 'quick_panel_bookmark_remove',
   // Quick Panel Search - History bridge
   QUICK_PANEL_HISTORY_QUERY: 'quick_panel_history_query',
+  QUICK_PANEL_HISTORY_DELETE: 'quick_panel_history_delete',
+  // Quick Panel Search - Content bridge
+  QUICK_PANEL_CONTENT_QUERY: 'quick_panel_content_query',
   // Quick Panel Navigation & Commands
   QUICK_PANEL_OPEN_URL: 'quick_panel_open_url',
   QUICK_PANEL_PAGE_COMMAND: 'quick_panel_page_command',
+  // Quick Panel Diagnostics - API Detective
+  QUICK_PANEL_API_DETECTIVE_START: 'quick_panel_api_detective_start',
+  QUICK_PANEL_API_DETECTIVE_STOP: 'quick_panel_api_detective_stop',
+  QUICK_PANEL_API_DETECTIVE_STATUS: 'quick_panel_api_detective_status',
+  QUICK_PANEL_API_DETECTIVE_LIST: 'quick_panel_api_detective_list',
+  QUICK_PANEL_API_DETECTIVE_GET_REQUEST: 'quick_panel_api_detective_get_request',
+  QUICK_PANEL_API_DETECTIVE_REPLAY_REQUEST: 'quick_panel_api_detective_replay_request',
+  // Quick Panel Clipboard History
+  QUICK_PANEL_CLIPBOARD_RECORD: 'quick_panel_clipboard_record',
+  QUICK_PANEL_CLIPBOARD_LIST: 'quick_panel_clipboard_list',
+  QUICK_PANEL_CLIPBOARD_GET: 'quick_panel_clipboard_get',
+  QUICK_PANEL_CLIPBOARD_SET_PINNED: 'quick_panel_clipboard_set_pinned',
+  QUICK_PANEL_CLIPBOARD_DELETE: 'quick_panel_clipboard_delete',
+  // Quick Panel Audit Log (Agent Mode)
+  QUICK_PANEL_AUDIT_LOG_LIST: 'quick_panel_audit_log_list',
+  QUICK_PANEL_AUDIT_LOG_CLEAR: 'quick_panel_audit_log_clear',
+  // Quick Panel Notes
+  QUICK_PANEL_NOTES_LIST: 'quick_panel_notes_list',
+  QUICK_PANEL_NOTES_GET: 'quick_panel_notes_get',
+  QUICK_PANEL_NOTES_CREATE: 'quick_panel_notes_create',
+  QUICK_PANEL_NOTES_DELETE: 'quick_panel_notes_delete',
+  // Quick Panel Focus Mode (Pomodoro / Focus)
+  QUICK_PANEL_FOCUS_STATUS: 'quick_panel_focus_status',
+  QUICK_PANEL_FOCUS_START: 'quick_panel_focus_start',
+  QUICK_PANEL_FOCUS_STOP: 'quick_panel_focus_stop',
+  QUICK_PANEL_FOCUS_PAUSE: 'quick_panel_focus_pause',
+  QUICK_PANEL_FOCUS_RESUME: 'quick_panel_focus_resume',
+  QUICK_PANEL_FOCUS_EXTEND: 'quick_panel_focus_extend',
+  QUICK_PANEL_FOCUS_SET_BLOCKLIST: 'quick_panel_focus_set_blocklist',
+  QUICK_PANEL_FOCUS_SET_BLOCKING_ENABLED: 'quick_panel_focus_set_blocking_enabled',
+  QUICK_PANEL_FOCUS_SNOOZE_BLOCKING: 'quick_panel_focus_snooze_blocking',
+  QUICK_PANEL_FOCUS_RESUME_BLOCKING: 'quick_panel_focus_resume_blocking',
+  // Quick Panel Web Monitor / Price Track (optional)
+  QUICK_PANEL_MONITOR_LIST: 'quick_panel_monitor_list',
+  QUICK_PANEL_MONITOR_CREATE: 'quick_panel_monitor_create',
+  QUICK_PANEL_MONITOR_DELETE: 'quick_panel_monitor_delete',
+  QUICK_PANEL_MONITOR_SET_ENABLED: 'quick_panel_monitor_set_enabled',
+  QUICK_PANEL_MONITOR_CHECK_NOW: 'quick_panel_monitor_check_now',
+  QUICK_PANEL_MONITOR_ALERT_MARK_READ: 'quick_panel_monitor_alert_mark_read',
+  QUICK_PANEL_MONITOR_ALERT_DELETE: 'quick_panel_monitor_alert_delete',
+  // Quick Panel Workspaces (session snapshots)
+  QUICK_PANEL_WORKSPACES_LIST: 'quick_panel_workspaces_list',
+  QUICK_PANEL_WORKSPACES_SAVE: 'quick_panel_workspaces_save',
+  QUICK_PANEL_WORKSPACES_OPEN: 'quick_panel_workspaces_open',
+  QUICK_PANEL_WORKSPACES_DELETE: 'quick_panel_workspaces_delete',
   // Quick Panel Usage History (Frecency) - IndexedDB bridge
   QUICK_PANEL_USAGE_RECORD: 'quick_panel_usage_record',
   QUICK_PANEL_USAGE_GET_ENTRIES: 'quick_panel_usage_get_entries',
@@ -111,6 +162,8 @@ export const OFFSCREEN_MESSAGE_TYPES = {
   SIMILARITY_ENGINE_COMPUTE: 'similarityEngineCompute',
   SIMILARITY_ENGINE_BATCH_COMPUTE: 'similarityEngineBatchCompute',
   SIMILARITY_ENGINE_STATUS: 'similarityEngineStatus',
+  // Web Monitor / Price Track (fetch + extract via DOMParser in offscreen document)
+  WEB_MONITOR_FETCH_EXTRACT: 'webMonitorFetchExtract',
   // GIF encoding
   GIF_ADD_FRAME: 'gifAddFrame',
   GIF_FINISH: 'gifFinish',
@@ -191,6 +244,9 @@ export const TOOL_MESSAGE_TYPES = {
   ELEMENT_PICKER_UI_SHOW: 'elementPickerUiShow',
   ELEMENT_PICKER_UI_UPDATE: 'elementPickerUiUpdate',
   ELEMENT_PICKER_UI_HIDE: 'elementPickerUiHide',
+  // Tool approval prompt (background -> content scripts)
+  TOOL_APPROVAL_SHOW: 'toolApprovalShow',
+  TOOL_APPROVAL_HIDE: 'toolApprovalHide',
 } as const;
 
 // Type unions for type safety
@@ -512,6 +568,28 @@ export interface QuickPanelBookmarksQueryMessage {
   payload: QuickPanelBookmarksQueryPayload;
 }
 
+/**
+ * Payload for removing a bookmark.
+ */
+export interface QuickPanelBookmarkRemovePayload {
+  bookmarkId: string;
+}
+
+/**
+ * Response from QUICK_PANEL_BOOKMARK_REMOVE message handler.
+ */
+export type QuickPanelBookmarkRemoveResponse =
+  | { success: true }
+  | { success: false; error: string };
+
+/**
+ * Message structure for removing a bookmark.
+ */
+export interface QuickPanelBookmarkRemoveMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_BOOKMARK_REMOVE;
+  payload: QuickPanelBookmarkRemovePayload;
+}
+
 // ============================================================
 // Quick Panel Search - History Bridge Contracts
 // ============================================================
@@ -549,6 +627,66 @@ export type QuickPanelHistoryQueryResponse =
 export interface QuickPanelHistoryQueryMessage {
   type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_HISTORY_QUERY;
   payload: QuickPanelHistoryQueryPayload;
+}
+
+/**
+ * Payload for deleting a history entry (by URL).
+ */
+export interface QuickPanelHistoryDeletePayload {
+  url: string;
+}
+
+/**
+ * Response from QUICK_PANEL_HISTORY_DELETE message handler.
+ */
+export type QuickPanelHistoryDeleteResponse = { success: true } | { success: false; error: string };
+
+/**
+ * Message structure for deleting a history entry.
+ */
+export interface QuickPanelHistoryDeleteMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_HISTORY_DELETE;
+  payload: QuickPanelHistoryDeletePayload;
+}
+
+// ============================================================
+// Quick Panel Search - Content Bridge Contracts
+// ============================================================
+
+/**
+ * Payload for querying cached tab content.
+ */
+export interface QuickPanelContentQueryPayload {
+  query: string;
+  maxResults?: number;
+}
+
+/**
+ * Summary of a single content match returned from the background.
+ */
+export interface QuickPanelContentMatchSummary {
+  tabId: number;
+  windowId: number;
+  url: string;
+  title: string;
+  favIconUrl?: string;
+  snippet: string;
+  score: number;
+}
+
+/**
+ * Response from QUICK_PANEL_CONTENT_QUERY message handler.
+ */
+export type QuickPanelContentQueryResponse =
+  | { success: true; items: QuickPanelContentMatchSummary[] }
+  | { success: false; error: string };
+
+/**
+ * Message structure for querying cached tab content.
+ */
+export interface QuickPanelContentQueryMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_CONTENT_QUERY;
+  payload: QuickPanelContentQueryPayload;
 }
 
 // ============================================================
@@ -593,12 +731,35 @@ export type QuickPanelPageCommand =
   | 'back'
   | 'forward'
   | 'stop'
+  | 'screenshot'
+  | 'dev_console_snapshot_export'
+  | 'dev_console_errors_export'
+  | 'dev_read_page_export'
+  | 'dev_network_capture_10s_export'
+  | 'dev_performance_trace_5s_export'
+  | 'dev_debug_bundle_create'
+  | 'dev_debug_bundle_cancel'
   | 'close_tab'
   | 'duplicate_tab'
   | 'toggle_pin'
   | 'toggle_mute'
+  | 'close_other_tabs'
+  | 'close_tabs_to_right'
+  | 'discard_inactive_tabs'
+  | 'merge_all_windows'
+  | 'skin_vscode'
+  | 'skin_terminal'
+  | 'skin_retro'
+  | 'skin_paper'
+  | 'skin_off'
+  | 'zen_mode_toggle'
+  | 'force_dark_toggle'
+  | 'allow_copy_toggle'
+  | 'privacy_curtain_toggle'
+  | 'reader_mode_toggle'
   | 'new_tab'
-  | 'new_window';
+  | 'new_window'
+  | 'new_incognito_window';
 
 /**
  * Payload for executing a page command.
@@ -607,10 +768,21 @@ export interface QuickPanelPageCommandPayload {
   command: QuickPanelPageCommand;
 }
 
+export interface QuickPanelPageCommandInfo {
+  message?: string;
+  download?: {
+    downloadId?: number;
+    filename?: string;
+    fullPath?: string;
+  };
+}
+
 /**
  * Response from QUICK_PANEL_PAGE_COMMAND message handler.
  */
-export type QuickPanelPageCommandResponse = { success: true } | { success: false; error: string };
+export type QuickPanelPageCommandResponse =
+  | { success: true; info?: QuickPanelPageCommandInfo }
+  | { success: false; error: string };
 
 /**
  * Message structure for executing a page command.
@@ -618,6 +790,778 @@ export type QuickPanelPageCommandResponse = { success: true } | { success: false
 export interface QuickPanelPageCommandMessage {
   type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_PAGE_COMMAND;
   payload: QuickPanelPageCommandPayload;
+}
+
+// ============================================================
+// Quick Panel API Detective (Diagnostics) Contracts
+// ============================================================
+
+export type QuickPanelApiDetectiveBackend = 'webRequest' | 'debugger';
+// eslint-disable-next-line
+export interface QuickPanelApiDetectiveStatusPayload {}
+
+export type QuickPanelApiDetectiveStatusResponse =
+  | {
+      success: true;
+      active: boolean;
+      backend: QuickPanelApiDetectiveBackend | null;
+      startedAt: number | null;
+      lastCaptureAt: number | null;
+      lastRequestCount: number;
+    }
+  | { success: false; error: string };
+
+export interface QuickPanelApiDetectiveStatusMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_API_DETECTIVE_STATUS;
+  payload: QuickPanelApiDetectiveStatusPayload;
+}
+
+export interface QuickPanelApiDetectiveStartPayload {
+  /**
+   * When true, uses the debugger backend and captures response bodies (high risk).
+   * Default: false (webRequest backend, no response body).
+   */
+  needResponseBody?: boolean;
+  /** Include static resources such as images/scripts/styles. Default: false. */
+  includeStatic?: boolean;
+  /** Max capture time in milliseconds. Default: 180000 (3 minutes). */
+  maxCaptureTimeMs?: number;
+}
+
+export type QuickPanelApiDetectiveStartResponse =
+  | {
+      success: true;
+      active: true;
+      backend: QuickPanelApiDetectiveBackend;
+      startedAt: number;
+    }
+  | { success: false; error: string };
+
+export interface QuickPanelApiDetectiveStartMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_API_DETECTIVE_START;
+  payload: QuickPanelApiDetectiveStartPayload;
+}
+
+// eslint-disable-next-line
+export interface QuickPanelApiDetectiveStopPayload {}
+
+export type QuickPanelApiDetectiveStopResponse =
+  | {
+      success: true;
+      active: false;
+      backend: QuickPanelApiDetectiveBackend;
+      capturedAt: number;
+      requestCount: number;
+    }
+  | { success: false; error: string };
+
+export interface QuickPanelApiDetectiveStopMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_API_DETECTIVE_STOP;
+  payload: QuickPanelApiDetectiveStopPayload;
+}
+
+export interface QuickPanelApiDetectiveRequestSummary {
+  requestId: string;
+  method: string;
+  url: string;
+  type?: string;
+  status?: number;
+  mimeType?: string;
+  requestBodyPreview?: string;
+}
+
+export interface QuickPanelApiDetectiveListPayload {
+  /** Optional query for server-side filtering (best-effort). */
+  query?: string;
+  /** Max results requested (best-effort). */
+  maxResults?: number;
+}
+
+export type QuickPanelApiDetectiveListResponse =
+  | {
+      success: true;
+      active: boolean;
+      backend: QuickPanelApiDetectiveBackend | null;
+      capturedAt: number | null;
+      tabUrl: string | null;
+      items: QuickPanelApiDetectiveRequestSummary[];
+    }
+  | { success: false; error: string };
+
+export interface QuickPanelApiDetectiveListMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_API_DETECTIVE_LIST;
+  payload: QuickPanelApiDetectiveListPayload;
+}
+
+export interface QuickPanelApiDetectiveRequestDetail {
+  requestId: string;
+  method: string;
+  url: string;
+  type?: string;
+  status?: number;
+  mimeType?: string;
+  requestHeaders: Record<string, string>;
+  requestBody?: string;
+}
+
+export interface QuickPanelApiDetectiveGetRequestPayload {
+  requestId: string;
+}
+
+export type QuickPanelApiDetectiveGetRequestResponse =
+  | { success: true; request: QuickPanelApiDetectiveRequestDetail }
+  | { success: false; error: string };
+
+export interface QuickPanelApiDetectiveGetRequestMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_API_DETECTIVE_GET_REQUEST;
+  payload: QuickPanelApiDetectiveGetRequestPayload;
+}
+
+export interface QuickPanelApiDetectiveReplayRequestPayload {
+  requestId: string;
+  timeoutMs?: number;
+}
+
+export type QuickPanelApiDetectiveReplayRequestResponse =
+  | { success: true; result: unknown }
+  | { success: false; error: string };
+
+export interface QuickPanelApiDetectiveReplayRequestMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_API_DETECTIVE_REPLAY_REQUEST;
+  payload: QuickPanelApiDetectiveReplayRequestPayload;
+}
+
+// ============================================================
+// Quick Panel Clipboard History Contracts
+// ============================================================
+
+export interface QuickPanelClipboardItemSummary {
+  id: string;
+  preview: string;
+  pinned: boolean;
+  createdAt: number;
+  updatedAt: number;
+  incognito: boolean;
+  /** Best-effort source tag (e.g. "commands.copy.url", "toolbox.jwt.payload"). */
+  source?: string;
+  /** Best-effort label (e.g. page title or output title). */
+  label?: string;
+  /** Best-effort origin URL (tab where the copy happened). */
+  originUrl?: string;
+  /** Best-effort origin title (tab where the copy happened). */
+  originTitle?: string;
+  /** Original UTF-8 byte length (may exceed stored length). */
+  byteLength: number;
+  /** Whether the full value is stored and retrievable. */
+  stored: boolean;
+  /** Copy count for dedupe + ranking. */
+  copyCount: number;
+}
+
+export interface QuickPanelClipboardItemDetail extends QuickPanelClipboardItemSummary {
+  /** Full stored value. Null when not stored (e.g. too large). */
+  value: string | null;
+}
+
+export interface QuickPanelClipboardRecordPayload {
+  text: string;
+  source?: string;
+  label?: string;
+  originUrl?: string;
+  originTitle?: string;
+}
+
+export type QuickPanelClipboardRecordResponse =
+  | { success: true }
+  | { success: false; error: string };
+
+export interface QuickPanelClipboardRecordMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_CLIPBOARD_RECORD;
+  payload: QuickPanelClipboardRecordPayload;
+}
+
+export interface QuickPanelClipboardListPayload {
+  query?: string;
+  maxResults?: number;
+}
+
+export type QuickPanelClipboardListResponse =
+  | { success: true; items: QuickPanelClipboardItemSummary[] }
+  | { success: false; error: string };
+
+export interface QuickPanelClipboardListMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_CLIPBOARD_LIST;
+  payload: QuickPanelClipboardListPayload;
+}
+
+export interface QuickPanelClipboardGetPayload {
+  id: string;
+}
+
+export type QuickPanelClipboardGetResponse =
+  | { success: true; item: QuickPanelClipboardItemDetail }
+  | { success: false; error: string };
+
+export interface QuickPanelClipboardGetMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_CLIPBOARD_GET;
+  payload: QuickPanelClipboardGetPayload;
+}
+
+export interface QuickPanelClipboardSetPinnedPayload {
+  id: string;
+  pinned: boolean;
+}
+
+export type QuickPanelClipboardSetPinnedResponse =
+  | { success: true }
+  | { success: false; error: string };
+
+export interface QuickPanelClipboardSetPinnedMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_CLIPBOARD_SET_PINNED;
+  payload: QuickPanelClipboardSetPinnedPayload;
+}
+
+export interface QuickPanelClipboardDeletePayload {
+  id: string;
+}
+
+export type QuickPanelClipboardDeleteResponse =
+  | { success: true }
+  | { success: false; error: string };
+
+export interface QuickPanelClipboardDeleteMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_CLIPBOARD_DELETE;
+  payload: QuickPanelClipboardDeletePayload;
+}
+
+// ============================================================
+// Quick Panel Notes Contracts
+// ============================================================
+
+export interface QuickPanelNoteSummary {
+  id: string;
+  title: string;
+  preview: string;
+  createdAt: number;
+  updatedAt: number;
+  incognito: boolean;
+}
+
+export interface QuickPanelNoteDetail extends QuickPanelNoteSummary {
+  content: string;
+}
+
+export interface QuickPanelNotesListPayload {
+  query?: string;
+  maxResults?: number;
+}
+
+export type QuickPanelNotesListResponse =
+  | { success: true; items: QuickPanelNoteSummary[] }
+  | { success: false; error: string };
+
+export interface QuickPanelNotesListMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_NOTES_LIST;
+  payload: QuickPanelNotesListPayload;
+}
+
+export interface QuickPanelNotesGetPayload {
+  id: string;
+}
+
+export type QuickPanelNotesGetResponse =
+  | { success: true; note: QuickPanelNoteDetail }
+  | { success: false; error: string };
+
+export interface QuickPanelNotesGetMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_NOTES_GET;
+  payload: QuickPanelNotesGetPayload;
+}
+
+export interface QuickPanelNotesCreatePayload {
+  title?: string;
+  content: string;
+}
+
+export type QuickPanelNotesCreateResponse =
+  | { success: true; note: QuickPanelNoteSummary }
+  | { success: false; error: string };
+
+export interface QuickPanelNotesCreateMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_NOTES_CREATE;
+  payload: QuickPanelNotesCreatePayload;
+}
+
+export interface QuickPanelNotesDeletePayload {
+  id: string;
+}
+
+export type QuickPanelNotesDeleteResponse = { success: true } | { success: false; error: string };
+
+export interface QuickPanelNotesDeleteMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_NOTES_DELETE;
+  payload: QuickPanelNotesDeletePayload;
+}
+
+// ============================================================
+// Quick Panel Focus Mode Contracts
+// ============================================================
+
+export type QuickPanelFocusPhase = 'idle' | 'running' | 'paused';
+
+export interface QuickPanelFocusSession {
+  phase: QuickPanelFocusPhase;
+  /** When the focus session was started. */
+  startedAt: number;
+  /** When the focus session will end (only meaningful when running). */
+  endsAt: number;
+  /**
+   * Remaining milliseconds.
+   * - When running: best-effort computed at response time.
+   * - When paused: persisted remaining time.
+   */
+  remainingMs: number;
+  /** Total planned duration (initial duration + extensions). */
+  durationMs: number;
+  /** Updated timestamp for UI ordering/debug. */
+  updatedAt: number;
+}
+
+export interface QuickPanelFocusStatus {
+  incognito: boolean;
+  now: number;
+  session: QuickPanelFocusSession;
+  blockingEnabled: boolean;
+  blockingActive: boolean;
+  /**
+   * Temporary blocking override (timestamp in ms).
+   * When `now < blockingSnoozedUntil`, blocking rules are suspended even if enabled.
+   */
+  blockingSnoozedUntil: number;
+  blocklist: string[];
+}
+
+export type QuickPanelFocusStatusResponse =
+  | { success: true; status: QuickPanelFocusStatus }
+  | { success: false; error: string };
+
+export interface QuickPanelFocusStatusMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_FOCUS_STATUS;
+  payload?: Record<string, never>;
+}
+
+export interface QuickPanelFocusStartPayload {
+  /** Focus duration in minutes. */
+  durationMinutes: number;
+}
+
+export type QuickPanelFocusStartResponse =
+  | { success: true; status: QuickPanelFocusStatus }
+  | { success: false; error: string };
+
+export interface QuickPanelFocusStartMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_FOCUS_START;
+  payload: QuickPanelFocusStartPayload;
+}
+
+export type QuickPanelFocusStopResponse =
+  | { success: true; status: QuickPanelFocusStatus }
+  | { success: false; error: string };
+
+export interface QuickPanelFocusStopMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_FOCUS_STOP;
+  payload?: Record<string, never>;
+}
+
+export type QuickPanelFocusPauseResponse =
+  | { success: true; status: QuickPanelFocusStatus }
+  | { success: false; error: string };
+
+export interface QuickPanelFocusPauseMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_FOCUS_PAUSE;
+  payload?: Record<string, never>;
+}
+
+export type QuickPanelFocusResumeResponse =
+  | { success: true; status: QuickPanelFocusStatus }
+  | { success: false; error: string };
+
+export interface QuickPanelFocusResumeMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_FOCUS_RESUME;
+  payload?: Record<string, never>;
+}
+
+export interface QuickPanelFocusExtendPayload {
+  /** Extend duration in minutes. */
+  minutes: number;
+}
+
+export type QuickPanelFocusExtendResponse =
+  | { success: true; status: QuickPanelFocusStatus }
+  | { success: false; error: string };
+
+export interface QuickPanelFocusExtendMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_FOCUS_EXTEND;
+  payload: QuickPanelFocusExtendPayload;
+}
+
+export interface QuickPanelFocusSetBlocklistPayload {
+  /** Hostname list (e.g. "youtube.com"). */
+  domains: string[];
+}
+
+export type QuickPanelFocusSetBlocklistResponse =
+  | { success: true; status: QuickPanelFocusStatus }
+  | { success: false; error: string };
+
+export interface QuickPanelFocusSetBlocklistMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_FOCUS_SET_BLOCKLIST;
+  payload: QuickPanelFocusSetBlocklistPayload;
+}
+
+export interface QuickPanelFocusSetBlockingEnabledPayload {
+  enabled: boolean;
+}
+
+export type QuickPanelFocusSetBlockingEnabledResponse =
+  | { success: true; status: QuickPanelFocusStatus }
+  | { success: false; error: string };
+
+export interface QuickPanelFocusSetBlockingEnabledMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_FOCUS_SET_BLOCKING_ENABLED;
+  payload: QuickPanelFocusSetBlockingEnabledPayload;
+}
+
+export interface QuickPanelFocusSnoozeBlockingPayload {
+  /** Snooze duration in minutes. Extends if already snoozed. */
+  minutes: number;
+}
+
+export type QuickPanelFocusSnoozeBlockingResponse =
+  | { success: true; status: QuickPanelFocusStatus }
+  | { success: false; error: string };
+
+export interface QuickPanelFocusSnoozeBlockingMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_FOCUS_SNOOZE_BLOCKING;
+  payload: QuickPanelFocusSnoozeBlockingPayload;
+}
+
+export type QuickPanelFocusResumeBlockingResponse =
+  | { success: true; status: QuickPanelFocusStatus }
+  | { success: false; error: string };
+
+export interface QuickPanelFocusResumeBlockingMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_FOCUS_RESUME_BLOCKING;
+  payload?: Record<string, never>;
+}
+
+// ============================================================
+// Quick Panel Web Monitor / Price Track Contracts
+// ============================================================
+
+export type QuickPanelMonitorExtractorKind = 'selector_text' | 'selector_attr';
+
+export interface QuickPanelMonitorSummary {
+  id: string;
+  url: string;
+  extractor: QuickPanelMonitorExtractorKind;
+  selector: string;
+  attribute?: string;
+  intervalMinutes: number;
+  enabled: boolean;
+  incognito: boolean;
+  createdAt: number;
+  updatedAt: number;
+  lastCheckedAt: number;
+  lastChangedAt: number;
+  lastValuePreview?: string;
+  lastError?: string;
+  unreadAlerts: number;
+}
+
+// ============================================================
+// Quick Panel Audit Log Contracts (Phase 14 - Agent Mode)
+// ============================================================
+
+export type QuickPanelAuditLogRiskLevel = 'low' | 'medium' | 'high';
+
+export type QuickPanelAuditLogStatus = 'success' | 'error' | 'denied';
+
+export interface QuickPanelAuditLogEntry {
+  id: string;
+  toolName: string;
+  toolDescription?: string;
+  riskLevel: QuickPanelAuditLogRiskLevel;
+  riskCategories: string[];
+  source: 'native_host' | 'extension_ui' | 'internal';
+  incognito: boolean;
+  status: QuickPanelAuditLogStatus;
+  startedAt: number;
+  finishedAt: number;
+  durationMs: number;
+  argsSummary: string;
+  resultSummary: string;
+}
+
+export interface QuickPanelAuditLogListPayload {
+  query?: string;
+  maxResults?: number;
+}
+
+export type QuickPanelAuditLogListResponse =
+  | { success: true; entries: QuickPanelAuditLogEntry[] }
+  | { success: false; error: string };
+
+export interface QuickPanelAuditLogListMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_AUDIT_LOG_LIST;
+  payload: QuickPanelAuditLogListPayload;
+}
+
+export type QuickPanelAuditLogClearResponse = { success: true } | { success: false; error: string };
+
+export interface QuickPanelAuditLogClearMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_AUDIT_LOG_CLEAR;
+  payload?: Record<string, never>;
+}
+
+export interface QuickPanelMonitorAlert {
+  id: string;
+  monitorId: string;
+  incognito: boolean;
+  createdAt: number;
+  url: string;
+  selector: string;
+  oldValue: string | null;
+  newValue: string | null;
+  read: boolean;
+}
+
+export interface QuickPanelMonitorListPayload {
+  /** Optional search query (best-effort). */
+  query?: string;
+  /** Max monitors requested (best-effort). */
+  maxMonitors?: number;
+  /** Max alerts requested (best-effort). */
+  maxAlerts?: number;
+}
+
+export type QuickPanelMonitorListResponse =
+  | {
+      success: true;
+      monitors: QuickPanelMonitorSummary[];
+      alerts: QuickPanelMonitorAlert[];
+      unreadCount: number;
+    }
+  | { success: false; error: string };
+
+export interface QuickPanelMonitorListMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_MONITOR_LIST;
+  payload: QuickPanelMonitorListPayload;
+}
+
+export interface QuickPanelMonitorCreatePayload {
+  url: string;
+  selector: string;
+  extractor?: QuickPanelMonitorExtractorKind;
+  attribute?: string;
+  intervalMinutes?: number;
+  /** If true, run an immediate baseline fetch. Default: true. */
+  fetchNow?: boolean;
+}
+
+export type QuickPanelMonitorCreateResponse =
+  | { success: true; monitor: QuickPanelMonitorSummary }
+  | { success: false; error: string };
+
+export interface QuickPanelMonitorCreateMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_MONITOR_CREATE;
+  payload: QuickPanelMonitorCreatePayload;
+}
+
+export interface QuickPanelMonitorDeletePayload {
+  id: string;
+}
+
+export type QuickPanelMonitorDeleteResponse = { success: true } | { success: false; error: string };
+
+export interface QuickPanelMonitorDeleteMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_MONITOR_DELETE;
+  payload: QuickPanelMonitorDeletePayload;
+}
+
+export interface QuickPanelMonitorSetEnabledPayload {
+  id: string;
+  enabled: boolean;
+}
+
+export type QuickPanelMonitorSetEnabledResponse =
+  | { success: true; monitor: QuickPanelMonitorSummary }
+  | { success: false; error: string };
+
+export interface QuickPanelMonitorSetEnabledMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_MONITOR_SET_ENABLED;
+  payload: QuickPanelMonitorSetEnabledPayload;
+}
+
+export interface QuickPanelMonitorCheckNowPayload {
+  id: string;
+}
+
+export type QuickPanelMonitorCheckNowResponse =
+  | {
+      success: true;
+      monitor: QuickPanelMonitorSummary;
+      alertCreated?: QuickPanelMonitorAlert;
+    }
+  | { success: false; error: string };
+
+export interface QuickPanelMonitorCheckNowMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_MONITOR_CHECK_NOW;
+  payload: QuickPanelMonitorCheckNowPayload;
+}
+
+export interface QuickPanelMonitorAlertMarkReadPayload {
+  id: string;
+  read: boolean;
+}
+
+export type QuickPanelMonitorAlertMarkReadResponse =
+  | { success: true; unreadCount: number }
+  | { success: false; error: string };
+
+export interface QuickPanelMonitorAlertMarkReadMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_MONITOR_ALERT_MARK_READ;
+  payload: QuickPanelMonitorAlertMarkReadPayload;
+}
+
+export interface QuickPanelMonitorAlertDeletePayload {
+  id: string;
+}
+
+export type QuickPanelMonitorAlertDeleteResponse =
+  | { success: true; unreadCount: number }
+  | { success: false; error: string };
+
+export interface QuickPanelMonitorAlertDeleteMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_MONITOR_ALERT_DELETE;
+  payload: QuickPanelMonitorAlertDeletePayload;
+}
+
+// ============================================================
+// Quick Panel Workspaces (Session Snapshots) Contracts
+// ============================================================
+
+/**
+ * Minimal workspace snapshot summary for list/search UI.
+ */
+export interface QuickPanelWorkspaceSummary {
+  id: string;
+  name: string;
+  tabCount: number;
+  createdAt: number;
+  updatedAt: number;
+  incognito: boolean;
+}
+
+/**
+ * Payload for listing workspace snapshots.
+ */
+export interface QuickPanelWorkspacesListPayload {
+  /**
+   * Optional filter query.
+   * Background may ignore and return recent list; UI can apply additional scoring.
+   */
+  query?: string;
+  /** Max results requested (best-effort). */
+  maxResults?: number;
+}
+
+/**
+ * Response from QUICK_PANEL_WORKSPACES_LIST message handler.
+ */
+export type QuickPanelWorkspacesListResponse =
+  | { success: true; items: QuickPanelWorkspaceSummary[] }
+  | { success: false; error: string };
+
+/**
+ * Message structure for listing workspaces.
+ */
+export interface QuickPanelWorkspacesListMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_WORKSPACES_LIST;
+  payload: QuickPanelWorkspacesListPayload;
+}
+
+/**
+ * Payload for saving a snapshot of the current window session.
+ */
+export interface QuickPanelWorkspacesSavePayload {
+  /** Optional user-provided name. Background will generate a default when empty. */
+  name?: string;
+}
+
+/**
+ * Response from QUICK_PANEL_WORKSPACES_SAVE message handler.
+ */
+export type QuickPanelWorkspacesSaveResponse =
+  | { success: true; workspace: QuickPanelWorkspaceSummary }
+  | { success: false; error: string };
+
+/**
+ * Message structure for saving a workspace snapshot.
+ */
+export interface QuickPanelWorkspacesSaveMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_WORKSPACES_SAVE;
+  payload: QuickPanelWorkspacesSavePayload;
+}
+
+/**
+ * Where to open a workspace snapshot.
+ */
+export type QuickPanelWorkspacesOpenTarget = 'current_window' | 'new_window';
+
+/**
+ * Payload for opening a workspace snapshot.
+ */
+export interface QuickPanelWorkspacesOpenPayload {
+  workspaceId: string;
+  target: QuickPanelWorkspacesOpenTarget;
+}
+
+/**
+ * Response from QUICK_PANEL_WORKSPACES_OPEN message handler.
+ */
+export type QuickPanelWorkspacesOpenResponse =
+  | { success: true; openedCount: number; totalCount: number; windowId?: number }
+  | { success: false; error: string };
+
+/**
+ * Message structure for opening a workspace snapshot.
+ */
+export interface QuickPanelWorkspacesOpenMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_WORKSPACES_OPEN;
+  payload: QuickPanelWorkspacesOpenPayload;
+}
+
+/**
+ * Payload for deleting a workspace snapshot.
+ */
+export interface QuickPanelWorkspacesDeletePayload {
+  workspaceId: string;
+}
+
+/**
+ * Response from QUICK_PANEL_WORKSPACES_DELETE message handler.
+ */
+export type QuickPanelWorkspacesDeleteResponse =
+  | { success: true }
+  | { success: false; error: string };
+
+/**
+ * Message structure for deleting a workspace snapshot.
+ */
+export interface QuickPanelWorkspacesDeleteMessage {
+  type: typeof BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_WORKSPACES_DELETE;
+  payload: QuickPanelWorkspacesDeletePayload;
 }
 
 // ============================================================

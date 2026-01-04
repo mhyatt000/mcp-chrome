@@ -23,17 +23,6 @@ export {
   type ActionRegistryHooks,
 } from './registry';
 
-// 适配器导出
-export {
-  execCtxToActionCtx,
-  stepToAction,
-  actionResultToExecResult,
-  createStepExecutor,
-  isActionSupported,
-  getActionType,
-  type StepExecutionAttempt,
-} from './adapter';
-
 // Handler 工厂导出
 export {
   createReplayActionRegistry,

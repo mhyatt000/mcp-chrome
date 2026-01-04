@@ -20,7 +20,10 @@ import { AfterScriptQueue } from './runners/after-script-queue';
 import { StepRunner } from './runners/step-runner';
 import { ControlFlowRunner } from './runners/control-flow-runner';
 import { SubflowRunner } from './runners/subflow-runner';
-import { ENGINE_CONSTANTS, LOG_STEP_IDS } from './constants';
+import {
+  ENGINE_CONSTANTS,
+  LOG_STEP_IDS,
+} from '@/entrypoints/background/replay-actions/engine/constants';
 import {
   DEFAULT_EXECUTION_MODE_CONFIG,
   createActionsOnlyConfig,
@@ -29,7 +32,7 @@ import {
   type ExecutionModeConfig,
 } from './execution-mode';
 import { createExecutor, type StepExecutorInterface } from './runners/step-executor';
-import { createReplayActionRegistry } from '../actions/handlers';
+import { createReplayActionRegistry } from '@/entrypoints/background/replay-actions';
 
 export interface RunOptions {
   tabTarget?: 'current' | 'new';

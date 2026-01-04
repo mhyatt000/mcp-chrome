@@ -9,11 +9,16 @@
 import {
   BACKGROUND_MESSAGE_TYPES,
   type QuickPanelBookmarkSummary,
+  type QuickPanelBookmarkRemoveResponse,
   type QuickPanelBookmarksQueryResponse,
-  type QuickPanelOpenUrlResponse,
 } from '@/common/message-types';
 import type { Action, SearchProvider, SearchProviderContext, SearchResult } from '../core/types';
-import { computeWeightedTokenScore, formatMarkdownLink, writeToClipboard } from './provider-utils';
+import {
+  computeWeightedTokenScore,
+  formatMarkdownLink,
+  openUrl,
+  writeToClipboard,
+} from './provider-utils';
 
 // ============================================================
 // Types
@@ -40,10 +45,7 @@ interface BookmarksClient {
     maxResults: number;
     signal: AbortSignal;
   }) => Promise<QuickPanelBookmarkSummary[]>;
-  openUrl: (options: {
-    url: string;
-    disposition: 'current_tab' | 'new_tab' | 'background_tab';
-  }) => Promise<void>;
+  removeBookmark: (bookmarkId: string) => Promise<void>;
 }
 
 function createRuntimeBookmarksClient(): BookmarksClient {
@@ -72,26 +74,28 @@ function createRuntimeBookmarksClient(): BookmarksClient {
     return Array.isArray(resp.bookmarks) ? resp.bookmarks : [];
   }
 
-  async function openUrl(options: {
-    url: string;
-    disposition: 'current_tab' | 'new_tab' | 'background_tab';
-  }): Promise<void> {
+  async function removeBookmark(bookmarkId: string): Promise<void> {
     if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
       throw new Error('chrome.runtime.sendMessage is not available');
     }
 
+    const id = String(bookmarkId ?? '').trim();
+    if (!id) {
+      throw new Error('bookmarkId is required');
+    }
+
     const resp = (await chrome.runtime.sendMessage({
-      type: BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_OPEN_URL,
-      payload: { url: options.url, disposition: options.disposition },
-    })) as QuickPanelOpenUrlResponse;
+      type: BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_BOOKMARK_REMOVE,
+      payload: { bookmarkId: id },
+    })) as QuickPanelBookmarkRemoveResponse;
 
     if (!resp || resp.success !== true) {
       const err = (resp as { error?: unknown })?.error;
-      throw new Error(typeof err === 'string' ? err : 'Failed to open url');
+      throw new Error(typeof err === 'string' ? err : 'Failed to remove bookmark');
     }
   }
 
-  return { query, openUrl };
+  return { query, removeBookmark };
 }
 
 // ============================================================
@@ -156,7 +160,7 @@ export function createBookmarksProvider(): SearchProvider<BookmarksSearchResultD
   function getActions(
     item: SearchResult<BookmarksSearchResultData>,
   ): Action<BookmarksSearchResultData>[] {
-    const { url, title } = item.data;
+    const { bookmarkId, url, title } = item.data;
 
     return [
       // Primary action: Open in current tab
@@ -164,16 +168,17 @@ export function createBookmarksProvider(): SearchProvider<BookmarksSearchResultD
         id: 'bookmarks.open',
         title: 'Open',
         hotkeyHint: 'Enter',
-        execute: async () => {
-          await client.openUrl({ url, disposition: 'current_tab' });
+        execute: async (ctx) => {
+          await openUrl({ url, disposition: ctx.openMode ?? 'current_tab' });
         },
       },
       // Open in new tab
       {
         id: 'bookmarks.openNewTab',
         title: 'Open in new tab',
+        hotkeyHint: 'Cmd/Ctrl+Enter',
         execute: async () => {
-          await client.openUrl({ url, disposition: 'new_tab' });
+          await openUrl({ url, disposition: 'new_tab' });
         },
       },
       // Copy URL
@@ -182,7 +187,7 @@ export function createBookmarksProvider(): SearchProvider<BookmarksSearchResultD
         title: 'Copy URL',
         hotkeyHint: 'Cmd+C',
         execute: async () => {
-          await writeToClipboard(url);
+          await writeToClipboard(url, { source: 'bookmarks.copy.url', label: title });
         },
       },
       // Copy as Markdown link
@@ -191,7 +196,19 @@ export function createBookmarksProvider(): SearchProvider<BookmarksSearchResultD
         title: 'Copy as Markdown',
         hotkeyHint: 'Cmd+Shift+C',
         execute: async () => {
-          await writeToClipboard(formatMarkdownLink(title, url));
+          await writeToClipboard(formatMarkdownLink(title, url), {
+            source: 'bookmarks.copy.markdown',
+            label: title,
+          });
+        },
+      },
+      // Delete bookmark (danger)
+      {
+        id: 'bookmarks.delete',
+        title: 'Delete bookmark',
+        tone: 'danger',
+        execute: async () => {
+          await client.removeBookmark(bookmarkId);
         },
       },
     ];

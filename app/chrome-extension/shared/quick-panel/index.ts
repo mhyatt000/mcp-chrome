@@ -50,13 +50,22 @@ import {
 } from './core/keyboard-controller';
 import { HistoryTracker } from './core/history-tracker';
 import { SearchEngine } from './core/search-engine';
-import type { QuickPanelView, SearchProvider, SearchResult } from './core/types';
+import type { ActionContext, QuickPanelView, SearchProvider, SearchResult } from './core/types';
 import { computeUsageKey } from './core/usage-key';
 import {
+  createApiDetectiveProvider,
   createBookmarksProvider,
+  createClipboardProvider,
   createCommandsProvider,
+  createContentProvider,
+  createAuditProvider,
+  createFocusProvider,
   createHistoryProvider,
+  createMonitorProvider,
+  createNotesProvider,
   createTabsProvider,
+  createWebSearchProvider,
+  createWorkspacesProvider,
 } from './providers';
 import {
   mountQuickPanelShadowHost,
@@ -212,7 +221,16 @@ export function createQuickPanelController(
       searchEngine.registerProvider(createTabsProvider() as SearchProvider);
       searchEngine.registerProvider(createBookmarksProvider() as SearchProvider);
       searchEngine.registerProvider(createHistoryProvider() as SearchProvider);
+      searchEngine.registerProvider(createContentProvider() as SearchProvider);
       searchEngine.registerProvider(createCommandsProvider() as SearchProvider);
+      searchEngine.registerProvider(createApiDetectiveProvider() as SearchProvider);
+      searchEngine.registerProvider(createWebSearchProvider() as SearchProvider);
+      searchEngine.registerProvider(createWorkspacesProvider() as SearchProvider);
+      searchEngine.registerProvider(createClipboardProvider() as SearchProvider);
+      searchEngine.registerProvider(createNotesProvider() as SearchProvider);
+      searchEngine.registerProvider(createFocusProvider() as SearchProvider);
+      searchEngine.registerProvider(createMonitorProvider() as SearchProvider);
+      searchEngine.registerProvider(createAuditProvider() as SearchProvider);
     }
     return searchEngine;
   }
@@ -314,9 +332,29 @@ export function createQuickPanelController(
   }
 
   /**
-   * Handle result selection from search view
+   * Get the currently selected result from search view state.
    */
-  function handleResultSelect(result: SearchResult): void {
+  function getSelectedResult(): SearchResult | null {
+    const s = searchView?.getState();
+    if (!s) return null;
+    if (s.selectedIndex < 0 || s.selectedIndex >= s.results.length) return null;
+    return s.results[s.selectedIndex] ?? null;
+  }
+
+  /**
+   * Check if a SearchResult represents the AI Assistant entry.
+   * This is used for keyboard shortcuts that bypass SearchView's internal selection handling.
+   */
+  function isAiEntry(result: SearchResult): boolean {
+    if (result.provider !== 'system') return false;
+    const data = result.data as unknown as Record<string, unknown> | null;
+    return typeof data === 'object' && data !== null && data.type === 'ai-entry';
+  }
+
+  /**
+   * Execute the provider's default action for a result.
+   */
+  function executeDefaultAction(result: SearchResult, openMode?: ActionContext['openMode']): void {
     if (disposed) return;
 
     // Look up the provider to get actions
@@ -336,24 +374,45 @@ export function createQuickPanelController(
       return;
     }
 
-    // Get actions from the provider
-    const actions = provider.getActions(result);
-    if (actions && actions.length > 0) {
-      const defaultAction = actions[0];
+    const ctx = { result, openMode } as ActionContext;
+
+    // Get actions from the provider (best-effort honor isAvailable)
+    const actions = (provider.getActions(result) ?? []).filter((a) => {
+      if (!a.isAvailable) return true;
       try {
-        // Execute with proper context
-        void Promise.resolve(defaultAction.execute({ result })).catch((err) => {
-          console.warn(`${LOG_PREFIX} Error executing action:`, err);
-        });
-        // Record usage after successful execution initiation
-        recordResultUsage(result);
-      } catch (err) {
-        console.warn(`${LOG_PREFIX} Error executing action:`, err);
+        return a.isAvailable(ctx);
+      } catch {
+        // Best-effort: treat as available if predicate throws
+        return true;
       }
+    });
+
+    const defaultAction = actions[0];
+    if (!defaultAction) {
+      hide();
+      return;
+    }
+
+    try {
+      // Execute with proper context
+      void Promise.resolve(defaultAction.execute(ctx)).catch((err) => {
+        console.warn(`${LOG_PREFIX} Error executing action:`, err);
+      });
+      // Record usage after successful execution initiation
+      recordResultUsage(result);
+    } catch (err) {
+      console.warn(`${LOG_PREFIX} Error executing action:`, err);
     }
 
     // Hide panel after action
     hide();
+  }
+
+  /**
+   * Handle result selection from search view
+   */
+  function handleResultSelect(result: SearchResult): void {
+    executeDefaultAction(result, 'current_tab');
   }
 
   /**
@@ -380,9 +439,9 @@ export function createQuickPanelController(
       },
       searchEngine: engine,
       historyTracker: ensureHistoryTracker(),
-      placeholder: 'Search tabs, bookmarks, commands...',
+      placeholder: 'Search tabs, bookmarks, history, content, commands...',
       autoFocus: false, // We'll focus after view is set
-      availableScopes: ['all', 'tabs', 'bookmarks', 'history', 'commands'],
+      availableScopes: ['all', 'tabs', 'bookmarks', 'history', 'content', 'commands'],
       onResultSelect: handleResultSelect,
       onAiSelect: () => {
         // Switch to chat view when AI entry is selected
@@ -534,10 +593,14 @@ export function createQuickPanelController(
         }
       },
       onSelectInNewTab: () => {
-        // TODO: Implement open in new tab action
-        // For now, just execute the default action
         if (currentView === 'search') {
-          searchView?.executeSelected();
+          const selected = getSelectedResult();
+          if (!selected) return;
+          if (isAiEntry(selected)) {
+            setView('chat');
+            return;
+          }
+          executeDefaultAction(selected, 'new_tab');
         }
       },
       onOpenActionPanel: () => {
@@ -572,8 +635,10 @@ export function createQuickPanelController(
         // Backspace when input empty: go back to previous view or clear
         if (currentView === 'chat') {
           setView('search');
+          return;
         }
-        // In search view with empty input, could close panel or do nothing
+        // In search view with empty input: close the panel
+        hide();
       },
       onClose: () => {
         hide();

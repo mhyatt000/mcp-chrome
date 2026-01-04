@@ -8,12 +8,17 @@
 
 import {
   BACKGROUND_MESSAGE_TYPES,
+  type QuickPanelHistoryDeleteResponse,
   type QuickPanelHistoryQueryResponse,
   type QuickPanelHistorySummary,
-  type QuickPanelOpenUrlResponse,
 } from '@/common/message-types';
 import type { Action, SearchProvider, SearchProviderContext, SearchResult } from '../core/types';
-import { computeWeightedTokenScore, formatMarkdownLink, writeToClipboard } from './provider-utils';
+import {
+  computeWeightedTokenScore,
+  formatMarkdownLink,
+  openUrl,
+  writeToClipboard,
+} from './provider-utils';
 
 // ============================================================
 // Types
@@ -41,10 +46,7 @@ interface HistoryClient {
     maxResults: number;
     signal: AbortSignal;
   }) => Promise<QuickPanelHistorySummary[]>;
-  openUrl: (options: {
-    url: string;
-    disposition: 'current_tab' | 'new_tab' | 'background_tab';
-  }) => Promise<void>;
+  deleteUrl: (url: string) => Promise<void>;
 }
 
 function createRuntimeHistoryClient(): HistoryClient {
@@ -73,26 +75,28 @@ function createRuntimeHistoryClient(): HistoryClient {
     return Array.isArray(resp.items) ? resp.items : [];
   }
 
-  async function openUrl(options: {
-    url: string;
-    disposition: 'current_tab' | 'new_tab' | 'background_tab';
-  }): Promise<void> {
+  async function deleteUrl(url: string): Promise<void> {
     if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
       throw new Error('chrome.runtime.sendMessage is not available');
     }
 
+    const normalized = String(url ?? '').trim();
+    if (!normalized) {
+      throw new Error('url is required');
+    }
+
     const resp = (await chrome.runtime.sendMessage({
-      type: BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_OPEN_URL,
-      payload: { url: options.url, disposition: options.disposition },
-    })) as QuickPanelOpenUrlResponse;
+      type: BACKGROUND_MESSAGE_TYPES.QUICK_PANEL_HISTORY_DELETE,
+      payload: { url: normalized },
+    })) as QuickPanelHistoryDeleteResponse;
 
     if (!resp || resp.success !== true) {
       const err = (resp as { error?: unknown })?.error;
-      throw new Error(typeof err === 'string' ? err : 'Failed to open url');
+      throw new Error(typeof err === 'string' ? err : 'Failed to delete history entry');
     }
   }
 
-  return { query, openUrl };
+  return { query, deleteUrl };
 }
 
 // ============================================================
@@ -165,16 +169,17 @@ export function createHistoryProvider(): SearchProvider<HistorySearchResultData>
         id: 'history.open',
         title: 'Open',
         hotkeyHint: 'Enter',
-        execute: async () => {
-          await client.openUrl({ url, disposition: 'current_tab' });
+        execute: async (ctx) => {
+          await openUrl({ url, disposition: ctx.openMode ?? 'current_tab' });
         },
       },
       // Open in new tab
       {
         id: 'history.openNewTab',
         title: 'Open in new tab',
+        hotkeyHint: 'Cmd/Ctrl+Enter',
         execute: async () => {
-          await client.openUrl({ url, disposition: 'new_tab' });
+          await openUrl({ url, disposition: 'new_tab' });
         },
       },
       // Copy URL
@@ -183,7 +188,7 @@ export function createHistoryProvider(): SearchProvider<HistorySearchResultData>
         title: 'Copy URL',
         hotkeyHint: 'Cmd+C',
         execute: async () => {
-          await writeToClipboard(url);
+          await writeToClipboard(url, { source: 'history.copy.url', label: title });
         },
       },
       // Copy as Markdown link
@@ -192,7 +197,19 @@ export function createHistoryProvider(): SearchProvider<HistorySearchResultData>
         title: 'Copy as Markdown',
         hotkeyHint: 'Cmd+Shift+C',
         execute: async () => {
-          await writeToClipboard(formatMarkdownLink(title, url));
+          await writeToClipboard(formatMarkdownLink(title, url), {
+            source: 'history.copy.markdown',
+            label: title,
+          });
+        },
+      },
+      // Delete from history (danger)
+      {
+        id: 'history.delete',
+        title: 'Delete from history',
+        tone: 'danger',
+        execute: async () => {
+          await client.deleteUrl(url);
         },
       },
     ];

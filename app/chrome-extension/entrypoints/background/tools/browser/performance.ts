@@ -6,17 +6,23 @@ import { cdpSessionManager } from '@/utils/cdp-session-manager';
 type OwnerTag = 'performance';
 
 interface StartTraceParams {
+  tabId?: number; // target existing tab id
+  windowId?: number; // when no tabId, pick active tab from this window
   reload?: boolean; // whether to reload the page after starting trace
   autoStop?: boolean; // whether to auto stop after a short duration
   durationMs?: number; // custom duration when autoStop is true (default 5000)
 }
 
 interface StopTraceParams {
+  tabId?: number; // target existing tab id
+  windowId?: number; // when no tabId, pick active tab from this window
   saveToDownloads?: boolean; // save trace to Downloads as JSON (default true)
   filenamePrefix?: string; // filename prefix (default 'performance_trace')
 }
 
 interface AnalyzeInsightParams {
+  tabId?: number; // target existing tab id
+  windowId?: number; // when no tabId, pick active tab from this window
   insightName?: string; // placeholder for future deep insights
 }
 
@@ -44,6 +50,34 @@ const LAST_RESULTS = new Map<
     metrics?: Record<string, number>;
   }
 >();
+
+function isValidTabId(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+function isValidWindowId(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+async function resolveTargetTab(options: {
+  tabId?: unknown;
+  windowId?: unknown;
+}): Promise<chrome.tabs.Tab | null> {
+  if (isValidTabId(options.tabId)) {
+    try {
+      return await chrome.tabs.get(options.tabId);
+    } catch {
+      return null;
+    }
+  }
+
+  const windowId = isValidWindowId(options.windowId) ? options.windowId : undefined;
+  const [activeTab] =
+    typeof windowId === 'number'
+      ? await chrome.tabs.query({ active: true, windowId })
+      : await chrome.tabs.query({ active: true, currentWindow: true });
+  return activeTab ?? null;
+}
 
 function tracingCategories(): string[] {
   // Keep broadly consistent with other project
@@ -221,15 +255,15 @@ class PerformanceStartTraceTool extends BaseBrowserToolExecutor {
   name = TOOL_NAMES.BROWSER.PERFORMANCE_START_TRACE;
 
   async execute(args: StartTraceParams): Promise<ToolResult> {
-    const { reload = false, autoStop = false, durationMs = 5000 } = args || {};
+    const { tabId, windowId, reload = false, autoStop = false, durationMs = 5000 } = args || {};
 
     try {
-      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!activeTab?.id) {
+      const targetTab = await resolveTargetTab({ tabId, windowId });
+      if (!targetTab?.id) {
         return createErrorResponse('No active tab found');
       }
-      const tabId = activeTab.id;
-      const existed = sessions.get(tabId);
+      const targetTabId = targetTab.id;
+      const existed = sessions.get(targetTabId);
       if (existed?.recording) {
         return {
           content: [{ type: 'text', text: 'Error: a performance trace is already running.' }],
@@ -237,15 +271,15 @@ class PerformanceStartTraceTool extends BaseBrowserToolExecutor {
         };
       }
 
-      await cdpSessionManager.attach(tabId, 'performance');
+      await cdpSessionManager.attach(targetTabId, 'performance');
 
       const state: TraceSessionState = {
         recording: true,
         events: [],
         startedAt: Date.now(),
-        pageUrl: activeTab.url || '',
+        pageUrl: targetTab.url || '',
         listener: (source, method, params) => {
-          if (source.tabId !== tabId) return;
+          if (source.tabId !== targetTabId) return;
           if (method === 'Tracing.dataCollected' && params?.value) {
             try {
               state.events.push(...(params.value as any[]));
@@ -259,11 +293,11 @@ class PerformanceStartTraceTool extends BaseBrowserToolExecutor {
         },
       };
       chrome.debugger.onEvent.addListener(state.listener);
-      sessions.set(tabId, state);
+      sessions.set(targetTabId, state);
 
       // Start tracing with categories
       const cats = tracingCategories().join(',');
-      await cdpSessionManager.sendCommand(tabId, 'Tracing.start', {
+      await cdpSessionManager.sendCommand(targetTabId, 'Tracing.start', {
         categories: cats,
         options: 'record-as-much-as-possible',
         transferMode: 'ReportEvents',
@@ -271,7 +305,7 @@ class PerformanceStartTraceTool extends BaseBrowserToolExecutor {
 
       if (reload) {
         try {
-          await cdpSessionManager.sendCommand(tabId, 'Page.reload', { ignoreCache: true });
+          await cdpSessionManager.sendCommand(targetTabId, 'Page.reload', { ignoreCache: true });
         } catch {
           // best effort; ignore if fails
         }
@@ -281,7 +315,7 @@ class PerformanceStartTraceTool extends BaseBrowserToolExecutor {
         setTimeout(
           async () => {
             try {
-              await cdpSessionManager.sendCommand(tabId, 'Tracing.end');
+              await cdpSessionManager.sendCommand(targetTabId, 'Tracing.end');
             } catch {
               // ignore
             }
@@ -317,12 +351,12 @@ class PerformanceStopTraceTool extends BaseBrowserToolExecutor {
   name = TOOL_NAMES.BROWSER.PERFORMANCE_STOP_TRACE;
 
   async execute(args: StopTraceParams): Promise<ToolResult> {
-    const { saveToDownloads = true, filenamePrefix } = args || {};
+    const { tabId, windowId, saveToDownloads = true, filenamePrefix } = args || {};
     try {
-      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!activeTab?.id) return createErrorResponse('No active tab found');
-      const tabId = activeTab.id;
-      const session = sessions.get(tabId);
+      const targetTab = await resolveTargetTab({ tabId, windowId });
+      if (!targetTab?.id) return createErrorResponse('No active tab found');
+      const targetTabId = targetTab.id;
+      const session = sessions.get(targetTabId);
       if (!session) {
         return {
           content: [
@@ -335,7 +369,7 @@ class PerformanceStopTraceTool extends BaseBrowserToolExecutor {
       let stopResult: { completed: boolean } = { completed: false };
       if (session.recording) {
         // End tracing and wait for completion signal
-        await cdpSessionManager.sendCommand(tabId, 'Tracing.end');
+        await cdpSessionManager.sendCommand(targetTabId, 'Tracing.end');
         await getOrCreateStopPromise(session);
         stopResult = await session.stopPromise!;
       } else {
@@ -343,7 +377,7 @@ class PerformanceStopTraceTool extends BaseBrowserToolExecutor {
         stopResult = { completed: true };
       }
       // Fetch metrics before detach
-      const metrics = await enablePerformanceMetrics(tabId);
+      const metrics = await enablePerformanceMetrics(targetTabId);
 
       // Cleanup event listener and detach
       try {
@@ -352,7 +386,7 @@ class PerformanceStopTraceTool extends BaseBrowserToolExecutor {
         // ignore
       }
       try {
-        await cdpSessionManager.detach(tabId, 'performance');
+        await cdpSessionManager.detach(targetTabId, 'performance');
       } catch {
         // ignore
       }
@@ -372,7 +406,7 @@ class PerformanceStopTraceTool extends BaseBrowserToolExecutor {
         }
       }
 
-      LAST_RESULTS.set(tabId, {
+      LAST_RESULTS.set(targetTabId, {
         events: session.events,
         startedAt: session.startedAt,
         endedAt,
@@ -381,7 +415,7 @@ class PerformanceStopTraceTool extends BaseBrowserToolExecutor {
         metrics,
       });
 
-      sessions.delete(tabId);
+      sessions.delete(targetTabId);
 
       return {
         content: [
@@ -418,12 +452,12 @@ class PerformanceAnalyzeInsightTool extends BaseBrowserToolExecutor {
   name = TOOL_NAMES.BROWSER.PERFORMANCE_ANALYZE_INSIGHT;
 
   async execute(args: AnalyzeInsightParams & { timeoutMs?: number }): Promise<ToolResult> {
-    const { insightName } = args || {};
+    const { tabId, windowId, insightName } = args || {};
     try {
-      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!activeTab?.id) return createErrorResponse('No active tab found');
-      const tabId = activeTab.id;
-      const result = LAST_RESULTS.get(tabId);
+      const targetTab = await resolveTargetTab({ tabId, windowId });
+      if (!targetTab?.id) return createErrorResponse('No active tab found');
+      const targetTabId = targetTab.id;
+      const result = LAST_RESULTS.get(targetTabId);
       if (!result) {
         return {
           content: [

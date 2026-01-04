@@ -839,6 +839,23 @@ describe('Control Flow Infrastructure', () => {
       expect(result.status).toBe('succeeded');
       // With inline=false, target flow's var change should NOT affect caller
       expect(runner.getVar('result')).toBe('initial');
+
+      // Event stream should also reconstruct the same final vars (debug/replay consistency).
+      const reconstructed: Record<string, unknown> = { result: 'initial' };
+      for (const event of eventsBus.events) {
+        if (event.type !== 'vars.patch') continue;
+        const patch = (
+          event as unknown as { patch: Array<{ op: string; name: string; value?: unknown }> }
+        ).patch;
+        for (const op of patch) {
+          if (op.op === 'set') {
+            reconstructed[op.name] = op.value ?? null;
+          } else if (op.op === 'delete') {
+            delete reconstructed[op.name];
+          }
+        }
+      }
+      expect(reconstructed['result']).toBe('initial');
     });
 
     it('should pass args to target flow', async () => {

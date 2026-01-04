@@ -7,7 +7,7 @@ import { PluginManager } from '../plugins/manager';
 import { mapDagNodeToStep } from '../../rr-utils';
 import type { Edge, NodeBase, Step } from '../../types';
 import { StepRunner } from './step-runner';
-import { ENGINE_CONSTANTS } from '../constants';
+import { ENGINE_CONSTANTS } from '@/entrypoints/background/replay-actions/engine/constants';
 
 export interface SubflowEnv {
   runId: string;

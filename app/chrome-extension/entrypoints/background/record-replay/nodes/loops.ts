@@ -1,5 +1,5 @@
 import type { ExecCtx, ExecResult, NodeRuntime } from './types';
-import { ENGINE_CONSTANTS } from '../engine/constants';
+import { ENGINE_CONSTANTS } from '@/entrypoints/background/replay-actions/engine/constants';
 
 export const foreachNode: NodeRuntime<any> = {
   validate: (step) => {

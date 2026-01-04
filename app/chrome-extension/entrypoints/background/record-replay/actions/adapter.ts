@@ -13,7 +13,7 @@
 
 import type { ExecCtx, ExecResult } from '../nodes/types';
 import type { Step } from '../types';
-import type { ActionRegistry } from './registry';
+import type { ActionRegistry } from '@/entrypoints/background/replay-actions/registry';
 import type {
   ActionExecutionContext,
   ActionExecutionResult,
@@ -22,7 +22,7 @@ import type {
   ExecutableActionType,
   ExecutionFlags,
   VariableStore,
-} from './types';
+} from '@/entrypoints/background/replay-actions/types';
 
 // ================================
 // Type Mapping
@@ -67,11 +67,13 @@ const STEP_TYPE_TO_ACTION_TYPE: Record<string, ExecutableActionType> = {
   while: 'while',
   switchFrame: 'switchFrame',
 
-  // TODO: Add when handlers are implemented
-  // triggerEvent: 'triggerEvent',
-  // setAttribute: 'setAttribute',
-  // loopElements: 'loopElements',
-  // executeFlow: 'executeFlow',
+  // DOM utilities
+  triggerEvent: 'triggerEvent',
+  setAttribute: 'setAttribute',
+
+  // Advanced control flow
+  loopElements: 'loopElements',
+  executeFlow: 'executeFlow',
 };
 
 // ================================

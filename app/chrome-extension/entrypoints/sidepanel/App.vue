@@ -27,6 +27,19 @@
         @edit-trigger="editTrigger"
         @remove-trigger="removeTrigger"
       />
+
+      <TriggerEditorModal
+        :open="triggerEditorOpen"
+        :mode="triggerEditorMode"
+        :flows="flows"
+        :trigger="triggerEditorTrigger"
+        :saving="triggerEditorSaving"
+        :error="triggerEditorError"
+        :default-url="currentUrl"
+        @close="closeTriggerEditor"
+        @submit="handleTriggerEditorSubmit"
+        @open-builder="openBuilder({ flowId: $event })"
+      />
     </div>
 
     <!-- Agent Chat Tab -->
@@ -290,9 +303,10 @@
 import { computed, onMounted, ref, onUnmounted, watch } from 'vue';
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
 import type { ElementMarker, UpsertMarkerRequest } from '@/common/element-marker-types';
+import type { TriggerSpec } from '@/entrypoints/background/record-replay-v3/domain/triggers';
 import AgentChat from './components/AgentChat.vue';
 import SidepanelNavigator from './components/SidepanelNavigator.vue';
-import { WorkflowsView } from './components/workflows';
+import { TriggerEditorModal, WorkflowsView } from './components/workflows';
 import { useAgentTheme } from './composables/useAgentTheme';
 import { useWorkflowsV3, type FlowLite } from './composables/useWorkflowsV3';
 
@@ -319,6 +333,12 @@ const onlyBound = ref(false);
 const search = ref('');
 const currentUrl = ref('');
 const openRunId = ref<string | null>(null);
+
+const triggerEditorOpen = ref(false);
+const triggerEditorMode = ref<'create' | 'edit'>('create');
+const triggerEditorTrigger = ref<TriggerSpec | null>(null);
+const triggerEditorSaving = ref(false);
+const triggerEditorError = ref<string | null>(null);
 
 // Element markers state
 const currentPageUrl = ref('');
@@ -436,17 +456,69 @@ async function exportFlow(id: string) {
 }
 
 function createTrigger() {
-  // V3 Trigger management not yet implemented
-  alert('V3 Trigger 管理尚未实现，暂时无法创建触发器');
+  triggerEditorError.value = null;
+  triggerEditorTrigger.value = null;
+  triggerEditorMode.value = 'create';
+  triggerEditorOpen.value = true;
 }
 
-function editTrigger(_id: string) {
-  // V3 Trigger management not yet implemented
-  alert('V3 Trigger 管理尚未实现，暂时无法编辑触发器');
+async function editTrigger(id: string) {
+  triggerEditorError.value = null;
+  triggerEditorMode.value = 'edit';
+  triggerEditorOpen.value = true;
+
+  const fromList = triggers.value.find((t) => t.id === id) as unknown as TriggerSpec | undefined;
+  if (fromList) {
+    triggerEditorTrigger.value = fromList;
+    return;
+  }
+
+  const fetched = await workflowsV3.getTriggerById(id);
+  triggerEditorTrigger.value = fetched;
 }
 
 async function removeTrigger(id: string) {
   await workflowsV3.deleteTrigger(id);
+}
+
+function closeTriggerEditor() {
+  triggerEditorOpen.value = false;
+  triggerEditorMode.value = 'create';
+  triggerEditorTrigger.value = null;
+  triggerEditorSaving.value = false;
+  triggerEditorError.value = null;
+}
+
+async function handleTriggerEditorSubmit(
+  payload:
+    | { mode: 'create'; trigger: Omit<TriggerSpec, 'id'> & { id?: string } }
+    | { mode: 'edit'; trigger: TriggerSpec },
+) {
+  if (triggerEditorSaving.value) return;
+
+  triggerEditorSaving.value = true;
+  triggerEditorError.value = null;
+
+  try {
+    if (payload.mode === 'create') {
+      const created = await workflowsV3.createTrigger(payload.trigger);
+      if (!created) {
+        triggerEditorError.value = workflowsV3.error.value || 'Failed to create trigger';
+        return;
+      }
+      closeTriggerEditor();
+      return;
+    }
+
+    const updated = await workflowsV3.updateTrigger(payload.trigger);
+    if (!updated) {
+      triggerEditorError.value = workflowsV3.error.value || 'Failed to update trigger';
+      return;
+    }
+    closeTriggerEditor();
+  } finally {
+    triggerEditorSaving.value = false;
+  }
 }
 
 function toggleRun(id: string) {
@@ -455,17 +527,26 @@ function toggleRun(id: string) {
 
 async function run(id: string) {
   try {
-    const result = await workflowsV3.runFlow(id);
+    let tabId: number | undefined;
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (typeof tab?.id === 'number' && Number.isSafeInteger(tab.id) && tab.id > 0) {
+        tabId = tab.id;
+      }
+    } catch {
+      // Best-effort: allow runs without tabId (runner will allocate an ephemeral tab)
+    }
+    const result = await workflowsV3.runFlow(id, { tabId });
     if (!result) console.warn('回放失败');
   } catch {}
 }
 
 function edit(id: string) {
-  openBuilder({ flowId: id });
+  void openBuilder({ flowId: id });
 }
 
 function createFlow() {
-  openBuilder({ newFlow: true });
+  void openBuilder({ newFlow: true });
 }
 
 async function remove(id: string) {
@@ -476,11 +557,17 @@ async function remove(id: string) {
   } catch {}
 }
 
-function openBuilder(opts: { flowId?: string; newFlow?: boolean }) {
+async function openBuilder(opts: { flowId?: string; newFlow?: boolean }) {
   // Open dedicated builder window for better UX
   const url = new URL(chrome.runtime.getURL('builder.html'));
   if (opts.flowId) url.searchParams.set('flowId', opts.flowId);
   if (opts.newFlow) url.searchParams.set('new', '1');
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id) url.searchParams.set('tabId', String(tab.id));
+  } catch {
+    // Best-effort: builder can still run without a preferred tabId
+  }
   chrome.windows.create({ url: url.toString(), type: 'popup', width: 1280, height: 800 });
 }
 

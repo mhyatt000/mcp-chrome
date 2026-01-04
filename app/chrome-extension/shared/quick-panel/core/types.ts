@@ -12,7 +12,24 @@
 /**
  * Available search scopes in Quick Panel
  */
-export type QuickPanelScope = 'all' | 'tabs' | 'bookmarks' | 'history' | 'content' | 'commands';
+export type QuickPanelScope =
+  | 'all'
+  | 'tabs'
+  | 'bookmarks'
+  | 'history'
+  | 'content'
+  | 'commands'
+  | 'workspaces'
+  | 'clipboard'
+  | 'notes'
+  | 'focus'
+  | 'monitor'
+  | 'audit'
+  | 'web_google'
+  | 'web_github'
+  | 'web_npm'
+  | 'web_stackoverflow'
+  | 'web_mdn';
 
 /**
  * Scope definition with display properties
@@ -23,7 +40,7 @@ export interface QuickPanelScopeDefinition {
   icon: string;
   /**
    * Scope prefix for search input recognition.
-   * - Space-terminated prefixes: "t ", "b ", "h ", "c "
+   * - Space-terminated prefixes: "t ", "b ", "h ", "c ", "g ", "gh ", "npm ", "so ", "mdn "
    * - Command mode prefix: ">"
    * - null for 'all' scope (no prefix)
    */
@@ -41,6 +58,22 @@ export const QUICK_PANEL_SCOPES: Readonly<Record<QuickPanelScope, QuickPanelScop
   history: { id: 'history', label: 'History', icon: '\uD83D\uDD50', prefix: 'h ' },
   content: { id: 'content', label: 'Content', icon: '\uD83D\uDCC4', prefix: 'c ' },
   commands: { id: 'commands', label: 'Commands', icon: '>', prefix: '>' },
+  workspaces: { id: 'workspaces', label: 'Workspaces', icon: '\uD83D\uDDC3\uFE0F', prefix: 'ws ' },
+  clipboard: { id: 'clipboard', label: 'Clipboard', icon: '\uD83D\uDCCB', prefix: 'clip ' },
+  notes: { id: 'notes', label: 'Notes', icon: '\uD83D\uDCDD', prefix: 'note ' },
+  focus: { id: 'focus', label: 'Focus', icon: '\uD83C\uDF45', prefix: 'focus ' },
+  monitor: { id: 'monitor', label: 'Monitor', icon: '\uD83D\uDC40', prefix: 'mon ' },
+  audit: { id: 'audit', label: 'Audit', icon: '\uD83E\uDDFE', prefix: 'audit ' },
+  web_google: { id: 'web_google', label: 'Google', icon: '\uD83D\uDD0D', prefix: 'g ' },
+  web_github: { id: 'web_github', label: 'GitHub', icon: '\uD83D\uDC19', prefix: 'gh ' },
+  web_npm: { id: 'web_npm', label: 'NPM', icon: '\uD83D\uDCE6', prefix: 'npm ' },
+  web_stackoverflow: {
+    id: 'web_stackoverflow',
+    label: 'Stack Overflow',
+    icon: '\uD83D\uDCA1',
+    prefix: 'so ',
+  },
+  web_mdn: { id: 'web_mdn', label: 'MDN', icon: '\uD83D\uDCDA', prefix: 'mdn ' },
 } as const;
 
 /**
@@ -85,6 +118,11 @@ export interface ParsedScopeQuery {
  * - `b foo` -> scope=bookmarks, query="foo"
  * - `h foo` -> scope=history, query="foo"
  * - `c foo` -> scope=content, query="foo"
+ * - `g foo` -> scope=web_google, query="foo"
+ * - `gh foo` -> scope=web_github, query="foo"
+ * - `npm foo` -> scope=web_npm, query="foo"
+ * - `so foo` -> scope=web_stackoverflow, query="foo"
+ * - `mdn foo` -> scope=web_mdn, query="foo"
  *
  * Only checks the beginning of the string (after trimming leading whitespace).
  */
@@ -105,22 +143,20 @@ export function parseScopePrefixedQuery(
     };
   }
 
-  // Check for space-terminated scope prefixes (t, b, h, c)
-  const match = leadingTrimmed.match(/^([tbhc])\s+(.*)$/s);
-  if (match) {
-    const prefix = match[1];
-    const rest = (match[2] ?? '').trimStart();
+  // Check for space-terminated scope prefixes (including multi-letter ones like "gh ")
+  const lower = leadingTrimmed.toLowerCase();
+  const prefixCandidates = Object.values(QUICK_PANEL_SCOPES)
+    .filter(
+      (def): def is QuickPanelScopeDefinition & { prefix: string } =>
+        typeof def.prefix === 'string' && def.prefix !== '>' && def.prefix.endsWith(' '),
+    )
+    .map((def) => ({ scope: def.id, prefix: def.prefix.toLowerCase() }))
+    .sort((a, b) => b.prefix.length - a.prefix.length); // Prefer longer matches ("gh " over "g ")
 
-    const scopeMap: Record<string, QuickPanelScope> = {
-      t: 'tabs',
-      b: 'bookmarks',
-      h: 'history',
-      c: 'content',
-    };
-
-    const scope = scopeMap[prefix] ?? defaultScope;
-
-    return { raw, scope, query: rest, consumedPrefix: true };
+  for (const candidate of prefixCandidates) {
+    if (!lower.startsWith(candidate.prefix)) continue;
+    const rest = leadingTrimmed.slice(candidate.prefix.length).trimStart();
+    return { raw, scope: candidate.scope, query: rest, consumedPrefix: true };
   }
 
   // No prefix detected

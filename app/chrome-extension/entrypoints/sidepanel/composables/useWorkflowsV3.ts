@@ -142,14 +142,19 @@ export interface UseWorkflowsV3Return {
   refreshFlows: () => Promise<void>;
   refreshRuns: () => Promise<void>;
   refreshTriggers: () => Promise<void>;
-  runFlow: (flowId: string) => Promise<{ runId: string } | null>;
+  runFlow: (flowId: string, options?: { tabId?: number }) => Promise<{ runId: string } | null>;
   deleteFlow: (flowId: string) => Promise<boolean>;
   exportFlow: (flowId: string) => Promise<FlowV3 | null>;
   deleteTrigger: (triggerId: string) => Promise<boolean>;
+  createTrigger: (
+    trigger: Omit<TriggerSpec, 'id'> & { id?: string },
+  ) => Promise<TriggerSpec | null>;
+  updateTrigger: (trigger: TriggerSpec) => Promise<TriggerSpec | null>;
 
   // V3-specific
   getFlowById: (flowId: string) => Promise<FlowV3 | null>;
   getRunEvents: (runId: string) => Promise<unknown[]>;
+  getTriggerById: (triggerId: string) => Promise<TriggerSpec | null>;
 }
 
 /**
@@ -217,10 +222,14 @@ export function useWorkflowsV3(options: UseWorkflowsV3Options = {}): UseWorkflow
     }
   }
 
-  async function runFlow(flowId: string): Promise<{ runId: string } | null> {
+  async function runFlow(
+    flowId: string,
+    options?: { tabId?: number },
+  ): Promise<{ runId: string } | null> {
     try {
       const result = (await rpc.request('rr_v3.enqueueRun', {
         flowId: flowId as FlowId,
+        ...(options?.tabId ? { tabId: options.tabId } : {}),
       })) as { runId: RunId; position: number } | null;
       // Refresh runs to show the new run
       void refreshRuns();
@@ -271,6 +280,36 @@ export function useWorkflowsV3(options: UseWorkflowsV3Options = {}): UseWorkflow
     }
   }
 
+  async function createTrigger(
+    trigger: Omit<TriggerSpec, 'id'> & { id?: string },
+  ): Promise<TriggerSpec | null> {
+    try {
+      const created = (await rpc.request('rr_v3.createTrigger', {
+        trigger,
+      })) as TriggerSpec | null;
+      void refreshTriggers();
+      return created;
+    } catch (e) {
+      console.warn('[useWorkflowsV3] Failed to create trigger:', e);
+      error.value = e instanceof Error ? e.message : String(e);
+      return null;
+    }
+  }
+
+  async function updateTrigger(trigger: TriggerSpec): Promise<TriggerSpec | null> {
+    try {
+      const updated = (await rpc.request('rr_v3.updateTrigger', {
+        trigger,
+      })) as TriggerSpec | null;
+      void refreshTriggers();
+      return updated;
+    } catch (e) {
+      console.warn('[useWorkflowsV3] Failed to update trigger:', e);
+      error.value = e instanceof Error ? e.message : String(e);
+      return null;
+    }
+  }
+
   async function getFlowById(flowId: string): Promise<FlowV3 | null> {
     try {
       return (await rpc.request('rr_v3.getFlow', {
@@ -290,6 +329,17 @@ export function useWorkflowsV3(options: UseWorkflowsV3Options = {}): UseWorkflow
     } catch (e) {
       console.warn('[useWorkflowsV3] Failed to get run events:', e);
       return [];
+    }
+  }
+
+  async function getTriggerById(triggerId: string): Promise<TriggerSpec | null> {
+    try {
+      return (await rpc.request('rr_v3.getTrigger', {
+        triggerId,
+      })) as TriggerSpec | null;
+    } catch (e) {
+      console.warn('[useWorkflowsV3] Failed to get trigger:', e);
+      return null;
     }
   }
 
@@ -358,7 +408,10 @@ export function useWorkflowsV3(options: UseWorkflowsV3Options = {}): UseWorkflow
     deleteFlow,
     exportFlow,
     deleteTrigger,
+    createTrigger,
+    updateTrigger,
     getFlowById,
     getRunEvents,
+    getTriggerById,
   };
 }

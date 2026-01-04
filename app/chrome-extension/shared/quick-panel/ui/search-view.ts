@@ -103,7 +103,7 @@ export interface QuickPanelSearchViewManager {
 // Constants
 // ============================================================
 
-const DEFAULT_PLACEHOLDER = 'Search tabs, bookmarks, commands...';
+const DEFAULT_PLACEHOLDER = 'Search tabs, bookmarks, history, content, commands...';
 const DEFAULT_SCOPES: QuickPanelScope[] = ['all', 'tabs', 'commands'];
 const DEFAULT_RECENT_LIMIT = 20;
 
@@ -263,6 +263,7 @@ export function mountQuickPanelSearchView(
   const hints = [
     { key: '\u2191\u2193', label: 'Navigate' },
     { key: '\u21b5', label: 'Select' },
+    { key: 'Cmd/Ctrl+\u21b5', label: 'New tab' },
     { key: 'Tab', label: 'Actions' },
     { key: 'Esc', label: 'Close' },
   ];

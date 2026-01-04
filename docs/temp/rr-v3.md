@@ -31,6 +31,7 @@
 - **Milestone 5 (清理 V2 代码)**: 全部完成 ✅
   - ✅ 5.1 V2 代码依赖关系分析
   - ✅ 5.2a 解耦 Condition 类型依赖 (创建 V3 独立 condition.ts)
+  - ✅ 5.2b 解耦 ActionHandlers 源码依赖 (提取 replay-actions)
   - ✅ 5.3 迁移 Builder UI 残留 V2 调用 (PropertyPanel.vue, PropertyExecuteFlow.vue)
   - ✅ 5.4 迁移 Popup V2 消息通道 (loadFlows/runFlow → V3 RPC)
   - ✅ 5.5 迁移 Tools/NativeHost V2 调用 (record-replay.ts, native-host.ts)
@@ -242,7 +243,7 @@
 
 ---
 
-## Milestone 5: 清理 V2 代码 🔄 (进行中 - 2025-12-30)
+## Milestone 5: 清理 V2 代码 ✅ (已完成 - 2026-01-02)
 
 ### 5.1 V2 代码依赖关系分析 ✅ (已完成)
 
@@ -274,20 +275,21 @@
 - **双库并存**: V2 `rr_storage` 与 V3 `rr_v3`
 - **无自动迁移**: 需要实现一次性迁移逻辑
 
-### 5.2 断开 V3 对 record-replay(V2) 的源码依赖 ⏳
+### 5.2 断开 V3 对 record-replay(V2) 的源码依赖 ✅ (已完成 - 2026-01-02)
 
-**目标**: 让 V3 不再 `import .../record-replay/...`
+**目标**: 让 V3 不再 `import .../record-replay/actions/...`
 
-**方案**: 将 V2 ActionHandlers 抽成版本中立的 `replay-actions` 模块
+**完成内容**: 将 V2 ActionHandlers 抽成版本中立的 `replay-actions` 模块
 
 **文件变更**:
 
-- 新建: `entrypoints/background/replay-actions/` (版本中立模块)
-  - 迁移: handlers, types, registry 等
-- 修改: `record-replay-v3/engine/plugins/register-v2-replay-nodes.ts`
-  - 改为导入 `replay-actions` 而非 `record-replay`
-- 修改: `record-replay-v3/domain/control.ts`
-  - 复制 `Condition` 类型到 V3 domain（解除类型依赖）
+- ✅ 新建: `entrypoints/background/replay-actions/` (版本中立模块)
+  - handlers, types, registry
+  - engine constants + wait utilities
+- ✅ 修改: `record-replay-v3/engine/plugins/register-v2-replay-nodes.ts` / `v2-action-adapter.ts`
+  - 改为导入 `replay-actions` 而非 `record-replay/actions`
+- ✅ 修改: `record-replay/engine/*` 与 `record-replay/rr-utils.ts`
+  - 改为复用 `replay-actions` 的 constants / wait 实现
 
 ### 5.3 迁移 Builder UI 残留 V2 调用 ✅ (已完成)
 
@@ -415,7 +417,7 @@
 - 方案 A: 在 finally 里发 "回滚到 savedVars" 的 `vars.patch`
 - 方案 B: 引入作用域事件，重建逻辑忽略 isolated scope 内的 patch
 
-**状态**: 待后续迭代处理
+**状态**: ✅ 已解决（采用方案 A：finally 发回滚 `vars.patch`）
 
 ---
 
@@ -453,7 +455,7 @@ Milestone 3: 触发器扩展 ✅       Milestone 4.1: 简单节点 ✅
                                    Milestone 4.4: executeFlow ✅
                                             │
                                             ▼
-                                   Milestone 5: 清理 V2 代码 ⏳
+                                   Milestone 5: 清理 V2 代码 ✅
 ```
 
 ## 风险与缓解
@@ -465,7 +467,7 @@ Milestone 3: 触发器扩展 ✅       Milestone 4.1: 简单节点 ✅
 | control flow 复杂导致 runner 不稳定 | 渐进式实现，每步都有测试覆盖                | ✅ 已解决 |
 | executeFlow 递归死锁                | 维护调用栈检测环，不走 enqueueRun           | ✅ 已解决 |
 | Trigger 批量保存造成抖动            | 节流/批处理策略                             | ✅ 已解决 |
-| V2 代码清理导致功能回退             | 充分测试，渐进式移除                        | ⏳ 待处理 |
+| V2 代码清理导致功能回退             | 充分测试，渐进式移除                        | ✅ 已解决 |
 
 ## 测试策略
 
@@ -476,4 +478,4 @@ Milestone 3: 触发器扩展 ✅       Milestone 4.1: 简单节点 ✅
 
 ---
 
-_最后更新: 2025-12-30 17:45_
+_最后更新: 2026-01-02_

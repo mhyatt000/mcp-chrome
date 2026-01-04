@@ -310,6 +310,8 @@ function toggleTheme() {
 }
 const store = useBuilderStore();
 
+const preferredRunTabId = ref<number | null>(null);
+
 // V3 RPC client
 const rpc = useRRV3Rpc({
   autoConnect: true,
@@ -348,6 +350,12 @@ function getQuery(): Record<string, string> {
 
 async function bootstrap() {
   const q = getQuery();
+  if (q.tabId) {
+    const parsed = Number(q.tabId);
+    if (Number.isSafeInteger(parsed) && parsed > 0) {
+      preferredRunTabId.value = parsed;
+    }
+  }
   if (q.flowId) {
     try {
       await rpc.ensureConnected();
@@ -785,6 +793,7 @@ async function runFromSelected() {
     await rpc.request('rr_v3.enqueueRun', {
       flowId: saved.id as FlowId,
       ...(startNodeId ? { startNodeId: startNodeId as NodeId } : {}),
+      ...(preferredRunTabId.value ? { tabId: preferredRunTabId.value } : {}),
     });
   } catch (e) {
     pushToast(`运行失败：${e instanceof Error ? e.message : String(e)}`, 'error');
@@ -799,7 +808,10 @@ async function runAll() {
     if (!saved) return;
 
     await rpc.ensureConnected();
-    await rpc.request('rr_v3.enqueueRun', { flowId: saved.id as FlowId });
+    await rpc.request('rr_v3.enqueueRun', {
+      flowId: saved.id as FlowId,
+      ...(preferredRunTabId.value ? { tabId: preferredRunTabId.value } : {}),
+    });
   } catch (e) {
     pushToast(`运行失败：${e instanceof Error ? e.message : String(e)}`, 'error');
   }

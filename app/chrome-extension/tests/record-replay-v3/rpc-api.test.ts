@@ -321,6 +321,26 @@ describe('V3 RPC Queue Management APIs', () => {
       );
     });
 
+    it('persists tabId into the queue item when provided', async () => {
+      const flow = createTestFlow('flow-1');
+      getInternal(storage).flowsMap.set(flow.id, flow);
+
+      await (server as unknown as { handleRequest: Function }).handleRequest(
+        {
+          method: 'rr_v3.enqueueRun',
+          params: { flowId: 'flow-1', tabId: 123 },
+          requestId: 'req-1',
+        },
+        { subscriptions: new Set() },
+      );
+
+      expect(storage.queue.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tabId: 123,
+        }),
+      );
+    });
+
     it('rejects NaN priority', async () => {
       const flow = createTestFlow('flow-1');
       getInternal(storage).flowsMap.set(flow.id, flow);

@@ -281,7 +281,7 @@ export function createTabsProvider(
         title: 'Copy URL',
         hotkeyHint: 'Cmd+C',
         execute: async () => {
-          await writeToClipboard(url);
+          await writeToClipboard(url, { source: 'tabs.copy.url', label: title });
         },
       },
       // Copy as Markdown link
@@ -290,7 +290,10 @@ export function createTabsProvider(
         title: 'Copy as Markdown',
         hotkeyHint: 'Cmd+Shift+C',
         execute: async () => {
-          await writeToClipboard(formatMarkdownLink(title, url));
+          await writeToClipboard(formatMarkdownLink(title, url), {
+            source: 'tabs.copy.markdown',
+            label: title,
+          });
         },
       },
       // Pin/Unpin toggle

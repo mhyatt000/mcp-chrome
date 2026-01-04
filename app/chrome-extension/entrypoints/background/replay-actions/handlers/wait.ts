@@ -9,8 +9,8 @@
  * - Selector visible/hidden
  */
 
-import { ENGINE_CONSTANTS } from '../../engine/constants';
-import { waitForNavigation, waitForNetworkIdle } from '../../rr-utils';
+import { ENGINE_CONSTANTS } from '../engine/constants';
+import { waitForNavigation, waitForNetworkIdle } from '../engine/utils/wait';
 import { failed, invalid, ok, tryResolveNumber } from '../registry';
 import type { ActionHandler } from '../types';
 import { clampInt, resolveString, sendMessageToTab } from './common';

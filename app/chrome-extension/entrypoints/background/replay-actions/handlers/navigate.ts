@@ -9,8 +9,8 @@
 
 import { handleCallTool } from '@/entrypoints/background/tools';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
-import { ENGINE_CONSTANTS } from '../../engine/constants';
-import { ensureReadPageIfWeb, waitForNavigationDone } from '../../engine/policies/wait';
+import { ENGINE_CONSTANTS } from '../engine/constants';
+import { ensureReadPageIfWeb, waitForNavigationDone } from '../engine/policies/wait';
 import { failed, invalid, ok } from '../registry';
 import type { ActionHandler } from '../types';
 import { clampInt, readTabUrl, resolveString } from './common';

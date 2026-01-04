@@ -23,7 +23,7 @@ import type {
   ValidationResult,
   Action,
   ControlDirective as V2ControlDirective,
-} from '@/entrypoints/background/record-replay/actions/types';
+} from '@/entrypoints/background/replay-actions/types';
 
 import type { ControlDirectiveV3 } from '../../domain/control';
 

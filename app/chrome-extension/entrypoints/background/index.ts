@@ -10,10 +10,18 @@ import { initWebEditorListeners } from './web-editor';
 import { initQuickPanelAgentHandler } from './quick-panel/agent-handler';
 import { initQuickPanelBookmarksHandler } from './quick-panel/bookmarks-handler';
 import { initQuickPanelCommands } from './quick-panel/commands';
+import { initQuickPanelContentHandler } from './quick-panel/content-handler';
+import { initQuickPanelClipboardHandler } from './quick-panel/clipboard-handler';
+import { initQuickPanelFocusHandler } from './quick-panel/focus-handler';
+import { initQuickPanelNotesHandler } from './quick-panel/notes-handler';
 import { initQuickPanelHistoryHandler } from './quick-panel/history-handler';
+import { initQuickPanelMonitorHandler } from './quick-panel/monitor-handler';
+import { initQuickPanelApiDetectiveHandler } from './quick-panel/api-detective-handler';
+import { initQuickPanelAuditHandler } from './quick-panel/audit-handler';
 import { initQuickPanelPageCommandsHandler } from './quick-panel/page-commands-handler';
 import { initQuickPanelTabsHandler } from './quick-panel/tabs-handler';
 import { initQuickPanelUsageHistoryHandler } from './quick-panel/usage-history-handler';
+import { initQuickPanelWorkspacesHandler } from './quick-panel/workspaces-handler';
 
 // Record-Replay V3
 import { bootstrapV3 } from './record-replay-v3/bootstrap';
@@ -59,10 +67,26 @@ export default defineBackground(() => {
   initQuickPanelBookmarksHandler();
   // Quick Panel: history search bridge
   initQuickPanelHistoryHandler();
+  // Quick Panel: content search bridge (cached readable text)
+  initQuickPanelContentHandler();
+  // Quick Panel: clipboard history (records Quick Panel copy actions)
+  initQuickPanelClipboardHandler();
+  // Quick Panel: focus mode (Pomodoro / Focus)
+  initQuickPanelFocusHandler();
+  // Quick Panel: quick notes (local-first)
+  initQuickPanelNotesHandler();
+  // Quick Panel: web monitor / price track (optional)
+  initQuickPanelMonitorHandler();
   // Quick Panel: usage history (frecency) store - IndexedDB backend
   initQuickPanelUsageHistoryHandler();
   // Quick Panel: navigation and page commands
   initQuickPanelPageCommandsHandler();
+  // Quick Panel: API Detective (diagnostics)
+  initQuickPanelApiDetectiveHandler();
+  // Quick Panel: audit log (Agent Mode)
+  initQuickPanelAuditHandler();
+  // Quick Panel: workspaces (session snapshots)
+  initQuickPanelWorkspacesHandler();
   // Quick Panel: keyboard shortcut handler
   initQuickPanelCommands();
 

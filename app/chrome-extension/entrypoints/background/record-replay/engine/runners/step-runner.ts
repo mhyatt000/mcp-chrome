@@ -16,8 +16,8 @@ import {
   maybeQuickWaitForNav,
   ensureReadPageIfWeb,
   waitForNetworkIdle,
-} from '../policies/wait';
-import { ENGINE_CONSTANTS } from '../constants';
+} from '@/entrypoints/background/replay-actions/engine/policies/wait';
+import { ENGINE_CONSTANTS } from '@/entrypoints/background/replay-actions/engine/constants';
 import { AfterScriptQueue } from './after-script-queue';
 import { PluginManager } from '../plugins/manager';
 import type { HookControl } from '../plugins/types';

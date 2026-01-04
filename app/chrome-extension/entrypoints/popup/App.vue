@@ -511,9 +511,21 @@ const refreshRecordingStatus = async () => {
 const runFlow = async (flowId: string) => {
   try {
     await rrRpc.ensureConnected();
+    let tabId: number | undefined;
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (typeof tab?.id === 'number' && Number.isSafeInteger(tab.id) && tab.id > 0) {
+        tabId = tab.id;
+      }
+    } catch {
+      // Best-effort: allow runs without tabId (runner will allocate an ephemeral tab)
+    }
     // V3 enqueueRun - fire-and-forget (run executes asynchronously in background)
     // Popup doesn't wait for completion; use sidepanel/builder for detailed results
-    const res = await rrRpc.request<{ runId: string }>('rr_v3.enqueueRun', { flowId });
+    const res = await rrRpc.request<{ runId: string }>('rr_v3.enqueueRun', {
+      flowId,
+      ...(tabId ? { tabId } : {}),
+    });
     if (!res || !res.runId) {
       console.warn('[Popup] Failed to enqueue run');
       return;
@@ -706,10 +718,16 @@ async function openTroubleshooting() {
   }
 }
 
-function openBuilderWindow(flowId?: string, focusNodeId?: string) {
+async function openBuilderWindow(flowId?: string, focusNodeId?: string) {
   const url = new URL(chrome.runtime.getURL('builder.html'));
   if (flowId) url.searchParams.set('flowId', flowId);
   if (focusNodeId) url.searchParams.set('focus', focusNodeId);
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id) url.searchParams.set('tabId', String(tab.id));
+  } catch {
+    // Best-effort: builder can still run without a preferred tabId
+  }
   chrome.windows.create({ url: url.toString(), type: 'popup', width: 1280, height: 800 });
 }
 

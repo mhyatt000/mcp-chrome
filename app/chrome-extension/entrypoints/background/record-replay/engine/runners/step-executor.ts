@@ -14,7 +14,7 @@
 import type { Step } from '../../types';
 import type { ExecCtx, ExecResult } from '../../nodes/types';
 import { executeStep as legacyExecuteStep } from '../../nodes';
-import type { ActionRegistry } from '../../actions/registry';
+import type { ActionRegistry } from '@/entrypoints/background/replay-actions/registry';
 import {
   createStepExecutor,
   isActionSupported,

@@ -17,7 +17,7 @@ import type {
   ActionExecutionContext,
   ActionExecutionResult,
   ActionHandler,
-} from '@/entrypoints/background/record-replay/actions/types';
+} from '@/entrypoints/background/replay-actions/types';
 import type {
   NodeExecutionContext,
   NodeExecutionResult,

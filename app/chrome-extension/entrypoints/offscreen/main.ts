@@ -7,6 +7,7 @@ import {
 } from '@/common/message-types';
 import { handleGifMessage } from './gif-encoder';
 import { initKeepalive } from './rr-keepalive';
+import { handleWebMonitorMessage } from './web-monitor';
 
 // 初始化 RR V3 Keepalive
 initKeepalive();
@@ -69,6 +70,11 @@ chrome.runtime.onMessage.addListener(
 
     // Handle GIF encoding messages first
     if (handleGifMessage(message, sendResponse)) {
+      return true;
+    }
+
+    // Web Monitor fetch + extract (DOMParser)
+    if (handleWebMonitorMessage(message, sendResponse)) {
       return true;
     }
 

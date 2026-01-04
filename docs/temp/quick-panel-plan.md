@@ -11,24 +11,34 @@ Quick Panel 是一个类 Raycast 的浏览器命令面板，提供：
 - **本地优先**：数据本地处理，隐私安全
 - **差异化能力**：利用 CDP/Native Host/MCP 实现独特功能
 
-### 1.2 当前实现状态（更新于 2025-12-30）
+### 1.2 当前实现状态（P0 + 部分 P1，更新于 2026-01-03）
 
-| 模块               | 状态    | 说明                                                      |
-| ------------------ | ------- | --------------------------------------------------------- |
-| Shadow DOM 宿主    | ✅ 完成 | `ui/shadow-host.ts` 样式隔离、事件阻断、主题同步          |
-| AI Chat 面板       | ✅ 完成 | `ui/ai-chat-panel.ts` 流式对话、SSE、取消                 |
-| AI Chat View       | ✅ 完成 | `ui/ai-chat-view.ts` 可嵌入的 View 组件（Phase 1）        |
-| 双视图 Shell       | ✅ 完成 | `ui/panel-shell.ts` 已集成到 Controller                   |
-| SearchEngine       | ✅ 完成 | `core/search-engine.ts` 已接入 UI                         |
-| Tabs Provider      | ✅ 完成 | `providers/tabs-provider.ts` 已接入 SearchView            |
-| Search View        | ✅ 完成 | `ui/search-view.ts` 搜索视图容器（Phase 2）               |
-| 键盘导航           | ✅ 完成 | `core/keyboard-controller.ts` IME 支持（Phase 3）         |
-| 结果列表 UI        | ✅ 完成 | 集成在 search-view.ts，支持 favicon 优先显示              |
-| 动作面板 UI        | ✅ 完成 | `ui/action-panel.ts` 支持 Tab 动作（Phase 4）             |
-| Bookmarks Provider | ✅ 完成 | `providers/bookmarks-provider.ts` 书签搜索（Phase 5）     |
-| History Provider   | ✅ 完成 | `providers/history-provider.ts` 历史搜索（Phase 5）       |
-| Commands Provider  | ✅ 完成 | `providers/commands-provider.ts` 页面/标签命令（Phase 5） |
-| 使用历史追踪       | ✅ 完成 | 最近使用记录与排序（Phase 6）                             |
+| 模块                | 状态    | 说明                                                                                            |
+| ------------------- | ------- | ----------------------------------------------------------------------------------------------- |
+| Shadow DOM 宿主     | ✅ 完成 | `ui/shadow-host.ts` 样式隔离、事件阻断、主题同步                                                |
+| AI Chat 面板        | ✅ 完成 | `ui/ai-chat-panel.ts` 流式对话、SSE、取消                                                       |
+| AI Chat View        | ✅ 完成 | `ui/ai-chat-view.ts` 可嵌入的 View 组件（Phase 1）                                              |
+| 双视图 Shell        | ✅ 完成 | `ui/panel-shell.ts` 已集成到 Controller                                                         |
+| SearchEngine        | ✅ 完成 | `core/search-engine.ts` 已接入 UI                                                               |
+| Tabs Provider       | ✅ 完成 | `providers/tabs-provider.ts` 已接入 SearchView                                                  |
+| Search View         | ✅ 完成 | `ui/search-view.ts` 搜索视图容器（Phase 2）                                                     |
+| 键盘导航            | ✅ 完成 | `core/keyboard-controller.ts` IME 支持（Phase 3）                                               |
+| 结果列表 UI         | ✅ 完成 | 集成在 search-view.ts，支持 favicon 优先显示                                                    |
+| 动作面板 UI         | ✅ 完成 | `ui/action-panel.ts` 支持 Tab 动作（Phase 4）                                                   |
+| Bookmarks Provider  | ✅ 完成 | `providers/bookmarks-provider.ts` 书签搜索（Phase 5）                                           |
+| History Provider    | ✅ 完成 | `providers/history-provider.ts` 历史搜索（Phase 5）                                             |
+| Content Provider    | ✅ 完成 | `providers/content-provider.ts` 内容搜索（Phase 7）                                             |
+| Commands Provider   | ✅ 完成 | `providers/commands-provider.ts` 页面/标签命令（Phase 5）                                       |
+| 使用历史追踪        | ✅ 完成 | 最近使用记录与排序（Phase 6）                                                                   |
+| Workspaces Provider | ✅ 完成 | `providers/workspaces-provider.ts` 会话快照（Phase 11）                                         |
+| Diagnostics Suite   | ✅ 完成 | Debug Bundle + API Detective（Phase 13）                                                        |
+| Clipboard History   | ✅ 完成 | `providers/clipboard-provider.ts` + `background/quick-panel/clipboard-handler.ts`（Phase 15.1） |
+| Quick Notes         | ✅ 完成 | `providers/notes-provider.ts` + `background/quick-panel/notes-handler.ts`（Phase 15.2）         |
+| Focus Mode          | ✅ 完成 | `providers/focus-provider.ts` + `background/quick-panel/focus-handler.ts`（Phase 15.3）         |
+| Web Monitor         | ✅ 完成 | `providers/monitor-provider.ts` + `background/quick-panel/monitor-handler.ts`（Phase 15.4）     |
+| Tool Audit Log      | ✅ 完成 | `providers/audit-provider.ts` + `background/quick-panel/audit-handler.ts`（Phase 14）           |
+
+> 注：PRD 中的 “AI 编排与可控工具层（Agent Mode）/ 个人效率与提醒” 已完成第一版（Phase 14/15）；后续仍可扩展（见下文）。
 
 ### 1.3 关键架构冲突（✅ 已解决）
 
@@ -262,6 +272,219 @@ app/chrome-extension/common/
 
 ---
 
+### Phase 7: 内容搜索 Provider
+
+**目标**：实现 PRD 的“内容搜索”能力（scope: `c `），可在打开的标签页中按正文内容检索。
+
+#### 7.1 后台内容缓存
+
+- **新建** `background/quick-panel/content-handler.ts`
+- 复用 `inject-scripts/web-fetcher-helper.js`（Readability）抽取可读正文
+- 内容截断到 50KB（best-effort），并限制缓存最多 200 个标签页
+- 触发时机（best-effort）：
+  - `tabs.onUpdated` (status === 'complete')
+  - `webNavigation.onHistoryStateUpdated` (SPA 路由变化)
+  - `tabs.onRemoved` (清理缓存)
+
+#### 7.2 Content Provider
+
+- **新建** `providers/content-provider.ts`
+- 默认动作：切换到匹配标签页；`Cmd/Ctrl+Enter` 以新标签打开 URL
+- 二级动作：新标签打开、复制 URL、关闭标签页
+
+---
+
+### Phase 8: 标签页高级管理（Commands）
+
+**目标**：实现 PRD P1 的高频标签页管理能力，并复用现有 `>` Commands 体系（不新增 UI 复杂度）。
+
+#### 8.1 新增命令项（Commands Provider）
+
+- **修改** `providers/commands-provider.ts`
+  - Close other tabs（关闭当前窗口其它未固定标签）
+  - Close tabs to the right（关闭右侧未固定标签）
+  - Discard inactive tabs（丢弃当前窗口未固定的非激活标签，释放内存）
+  - Merge all windows（将其它窗口的标签移动到当前窗口）
+
+#### 8.2 扩展后台命令执行能力
+
+- **修改** `background/quick-panel/page-commands-handler.ts`
+  - 新增 page command：`close_other_tabs` / `close_tabs_to_right` / `discard_inactive_tabs` / `merge_all_windows`
+- **修改** `common/message-types.ts`
+  - 扩展 `QuickPanelPageCommand` union
+
+---
+
+### Phase 9: 多引擎搜索 & 快捷链接（来自 `.docs/tansuo.md`）
+
+**目标**：在 Quick Panel 内用前缀快速打开常用搜索引擎与 URL 模板（例如 `g react hooks`、`gh openai`、`npm vitest`），减少上下文切换。
+
+#### 9.1 Scope / Prefix 扩展（输入协议）
+
+- **修改** `core/types.ts`
+  - 扩展 `QuickPanelScope` / `QUICK_PANEL_SCOPES`（新增若干 “Web Search” scope）
+  - 扩展 `parseScopePrefixedQuery`：识别 `g ` / `gh ` / `npm ` / `so ` / `mdn ` 等前缀（按 PRD 精简）
+- 约束：新增 scope **仅前缀触发**，不强制增加新的键盘切换快捷键，避免 UI 复杂度膨胀
+
+#### 9.2 Web Search Provider
+
+- **新建** `providers/web-search-provider.ts`
+  - scope 驱动：不同 scope → 不同 engine URL 模板（Google/GitHub/NPM/StackOverflow/MDN…）
+  - 动作：Enter 在当前标签打开；`Cmd/Ctrl+Enter` 新标签打开（复用 openMode → `QUICK_PANEL_OPEN_URL`）
+- **新建** `core/url-template.ts`（纯函数）
+  - 统一处理 URL 模板填充与编码规则（`{query}`、可选的 `{rawQuery}` 等）
+  - 提供可测试的最小接口：`buildSearchUrl(engine, query)`
+
+#### 9.3 配置（可选）
+
+- **可选**：支持用户自定义搜索引擎模板（`chrome.storage.sync`），并提供默认模板集作为 fallback
+  - 说明：建议优先做 “内置 5-8 个引擎 + 可编辑” 的闭环，再考虑更泛化的模板 DSL
+
+---
+
+### Phase 10: 页面工具（Zen / Dark / Reader / Outline / Clean URL / PIP / Allow Copy）
+
+**目标**：补齐 PRD P1 “页面工具”能力，优先以 `>` Commands 落地（低 UI 成本），并复用既有 background bridge。
+
+#### 10.1 无参数 Commands（toggle / one-shot 优先）
+
+- **修改** `providers/commands-provider.ts`
+  - Page Skins：VS Code / Terminal / Retro / Paper / Off（始终显示 “Skin mode” 水印，避免产生“伪装”歧义）
+  - Clean URL：去除常见追踪参数（utm/fbclid/gclid 等），支持复制与新标签打开
+  - Zen Mode：注入 CSS 隐藏干扰元素（best-effort），支持关闭还原
+  - Force Dark：CSS filter 强制暗色（best-effort），支持关闭还原
+  - Allow Copy：解除复制/选中限制（best-effort，不承诺对所有站点有效）
+  - Picture-in-Picture：对页面内可用 `<video>` 触发 PIP
+  - Privacy Curtain：一键遮罩/模糊当前页面（屏幕共享/公共场景的隐私保护）
+- **修改** `background/quick-panel/page-commands-handler.ts`
+  - 统一走 `QUICK_PANEL_PAGE_COMMAND`，按 command 分支注入脚本或调用现有 tool
+- **修改** `common/message-types.ts`
+  - 扩展 `QuickPanelPageCommand` union + 消息 typing
+
+#### 10.2 Reader / Outline（需要“列表型结果”的承载）
+
+- **Reader Mode（建议优先）**
+  - 复用 `inject-scripts/web-fetcher-helper.js`（Readability）抽取正文
+  - 输出策略二选一（需要产品决策）：
+    - 方案 A：新增 `ui/reader-view.ts`（作为第三视图，复用 Shell）
+    - 方案 B：生成纯 HTML/Markdown 并在新标签打开（更轻量、可先闭环）
+- **Page Outline（目录）**
+  - 注入脚本抽取 H1-H6（含 text + id + offset），并提供跳转能力（`scrollIntoView`）
+  - 承载方式建议同 Reader：要么独立 view，要么先做 “复制目录为 Markdown”
+
+---
+
+### Phase 11: 会话 / 工作区（Session Time Machine）
+
+**目标**：把 “保存/恢复一组标签页” 做成一等能力，支持项目上下文切换，并为后续 AI 编排提供可复用的基础工具。
+
+#### 11.1 后台存储与消息协议
+
+- **新建** `background/quick-panel/workspaces-handler.ts`
+  - 负责：保存快照、列出快照、恢复快照、删除快照
+  - 存储：`chrome.storage.local`（先闭环；后续可选迁移到 `storage.sync`）
+- **修改** `common/message-types.ts`
+  - 新增：`QUICK_PANEL_WORKSPACES_LIST` / `QUICK_PANEL_WORKSPACES_SAVE` / `QUICK_PANEL_WORKSPACES_OPEN` / `QUICK_PANEL_WORKSPACES_DELETE`
+
+#### 11.2 Provider & UX
+
+- **新建** `providers/workspaces-provider.ts`
+  - 建议 scope 前缀：`ws `（仅前缀触发）
+  - 空查询：展示最近快照 + “Save current session”
+  - 有查询：过滤匹配，并提供虚拟条目 “Save session as <query>” 以承载命名输入
+  - 打开动作：当前窗口恢复 / 新窗口恢复（至少二选一）
+- **风险控制**
+  - 恢复快照可能导致批量打开标签：需要二次确认策略（UI/交互待确认）
+  - Incognito 与 normal 之间禁止互相恢复（避免隐私边界破坏）
+
+---
+
+### Phase 12: 工具箱（文本转换 + 开发者常用）
+
+**目标**：把 `.docs/tansuo.md` 中高频 “瑞士军刀” 能力落到 Quick Panel，优先以可测试的纯函数实现，并在 UI 上以 “结果 + 一键复制” 闭环。
+
+#### 12.1 文本/数据转换（Argument Commands）
+
+- 典型命令（示例）：`> json {...}` / `> base64 encode ...` / `> url decode ...` / `> ts 1700000000` / `> uuid` / `> jwt <token>`
+- 实现建议：
+  - **扩展** `providers/commands-provider.ts`：引入 “argument command” 概念（基于 query tokens 动态生成结果）
+  - **新建** `core/toolbox/`：放置可复用纯函数（json/url/base64/ts/jwt/uuid/regex）
+  - 结果呈现：subtitle 展示截断预览，动作面板提供 Copy/Copy raw 等
+
+#### 12.2 开发者工具（复用现有 browser tools）
+
+- 复用 `app/chrome-extension/entrypoints/background/tools/browser/*`：
+  - Cookie 查看/导出（`chrome.cookies`）
+  - LocalStorage/SessionStorage 读取（注入脚本）
+  - Network capture（webRequest/debugger 两种实现）
+  - Performance trace、Console capture、Read Page 等
+- Quick Panel 侧落地形式：
+  - 先做 “`>` Commands → 执行并导出/复制结果” 的闭环
+  - 复杂交互（列表/筛选）再升级为独立 view（避免早期 UI 失控）
+
+---
+
+### Phase 13: 差异化诊断套件（Debug Bundle / API Detective）
+
+**目标**：把 PRD P2 的差异化能力做成可售卖的核心卖点：一键采集 Bug 报告包、抓包反推 API。
+
+#### 13.1 Debug Bundle（一键 Bug 报告）
+
+- 编排现有 Tools（截图/Console/Network/Performance），输出到 Downloads（zip 或目录）
+- 关键要求：
+  - 可取消、可重试、失败可定位（每一步单独 error）
+  - 高风险能力（debugger/network body）需要显式提示/确认
+
+#### 13.2 API Detective（抓包反推 API）
+
+- Quick Panel 命令开始抓包 → 用户执行操作 → 命令停止抓包 → 列表展示关键请求
+- 输出能力：复制为 curl / fetch、请求重放（复用 `network-request`）
+
+---
+
+### Phase 14: AI 编排与可控工具层（Agent Mode，探索）
+
+**目标**：将上述能力封装为可被 AI 调用的 “Tools”，提供权限分级、确认门槛与可回放 action log，支撑商业级可控性。
+
+- 方向（来自 `.docs/tansuo.md`）：
+  - tool schema（输入/输出契约）+ 统一执行通道
+  - 风险分级（读/写/破坏性/外部网络/本地文件）+ 二次确认
+  - Plan mode：先展示计划，再执行
+  - Action log：可审计、可回放、可撤销（best-effort）
+
+---
+
+### Phase 15: 个人效率与提醒（Clipboard / Notes / Pomodoro / Focus / Monitor）
+
+**目标**：落地 `.docs/tansuo.md` 中的高频个人效率能力：剪贴板历史、快速笔记、番茄钟/专注模式、网页监控与提醒（分阶段）。
+
+#### 15.1 Clipboard History（先做 Quick Panel 内来源）
+
+- **新建** `providers/clipboard-provider.ts`（建议 scope 前缀：`clip `）
+- **新建** `background/quick-panel/clipboard-handler.ts`
+  - 仅记录来自 Quick Panel 的复制行为（Copy URL/Copy Markdown/工具箱 Copy 结果等）
+  - 可选增加显式命令：`> clip save`（在用户手势内读取当前剪贴板，避免无授权读取）
+
+#### 15.2 Quick Notes（本地优先）
+
+- **新建** `providers/notes-provider.ts`（建议 scope 前缀：`note `）
+- **新建** `background/quick-panel/notes-handler.ts`
+  - 通过 query 创建/搜索笔记，默认本地存储（`chrome.storage.local`）
+
+#### 15.3 Pomodoro / Focus Mode（专注与防打断）
+
+- **新建** `providers/focus-provider.ts`（或以 `>` Commands 先闭环）
+- 后台使用 `chrome.alarms` 实现计时与状态持久化
+- 网站屏蔽策略（可选）：
+  - 复用 `declarativeNetRequest` 动态规则，在专注期间阻断/重定向干扰域名
+  - 提供一键暂停/延长（带“心理 friction”）
+  - Implemented timed blocking snooze/resume (`focus snooze 5` / `focus resume-blocking`) to avoid “forgotten disable” scenarios.
+
+#### 15.4 Web Monitor / Price Track（可选）
+
+- 后台定时抽取页面关键元素（best-effort），发生变化时提示用户
+- 备注：通知形态需要产品决策（面板内提示 vs 增加 `notifications` 权限）
+
 ## 四、文件变更清单
 
 ### 新建文件
@@ -277,10 +500,12 @@ app/chrome-extension/shared/quick-panel/
 ├── core/
 │   ├── keyboard-controller.ts  # 键盘控制器
 │   ├── history-tracker.ts      # 使用历史追踪
+│   ├── content-search.ts       # 内容搜索（snippet + token scoring）
 │   └── command-registry.ts     # 命令注册表
 ├── providers/
 │   ├── bookmarks-provider.ts   # 书签 Provider
 │   ├── history-provider.ts     # 历史 Provider
+│   ├── content-provider.ts     # 内容 Provider
 │   └── commands-provider.ts    # 命令 Provider
 └── commands/
     ├── page-commands.ts        # 页面操作命令
@@ -288,7 +513,8 @@ app/chrome-extension/shared/quick-panel/
 
 app/chrome-extension/entrypoints/background/quick-panel/
 ├── bookmarks-handler.ts        # 书签后台处理
-└── history-handler.ts          # 历史后台处理
+├── history-handler.ts          # 历史后台处理
+└── content-handler.ts          # 内容搜索后台处理
 ```
 
 ### 修改文件
@@ -301,11 +527,49 @@ app/chrome-extension/shared/quick-panel/
 │   └── panel-shell.ts          # 可能需要微调
 ├── providers/
 │   └── tabs-provider.ts        # 扩展动作
+app/chrome-extension/shared/quick-panel/ui/
+└── search-view.ts              # 更新 placeholder/scopes
+app/chrome-extension/shared/quick-panel/providers/
+└── index.ts                    # 导出 Content provider
+app/chrome-extension/shared/quick-panel/providers/
+└── commands-provider.ts         # 新增标签管理命令（P1）
 app/chrome-extension/entrypoints/background/quick-panel/
 └── tabs-handler.ts             # 新增 pin/mute 消息处理
+app/chrome-extension/entrypoints/background/quick-panel/
+└── page-commands-handler.ts     # 扩展 page commands（P1）
+app/chrome-extension/entrypoints/background/
+└── index.ts                    # 初始化 Content handler
 app/chrome-extension/common/
 └── message-types.ts            # 新增消息类型
 ```
+
+### Phase 9+ 预期文件增量（部分已实现）
+
+> 说明：以下为从 `.docs/tansuo.md` 提炼出的可落地 backlog 对应的预期文件增量，具体以 Phase 9+ 的产品决策为准。
+
+#### 新建（建议）
+
+- `app/chrome-extension/shared/quick-panel/providers/clipboard-provider.ts`
+- `app/chrome-extension/entrypoints/background/quick-panel/clipboard-handler.ts`
+- `app/chrome-extension/shared/quick-panel/providers/notes-provider.ts`
+- `app/chrome-extension/entrypoints/background/quick-panel/notes-handler.ts`
+- `app/chrome-extension/shared/quick-panel/providers/focus-provider.ts`
+- （可选）`app/chrome-extension/shared/quick-panel/ui/reader-view.ts`
+
+#### 已实现（摘录）
+
+- `app/chrome-extension/shared/quick-panel/providers/web-search-provider.ts`
+- `app/chrome-extension/shared/quick-panel/core/url-template.ts`
+- `app/chrome-extension/shared/quick-panel/providers/workspaces-provider.ts`
+- `app/chrome-extension/entrypoints/background/quick-panel/workspaces-handler.ts`
+- `app/chrome-extension/shared/quick-panel/core/toolbox/*`
+
+#### 修改（必需）
+
+- `app/chrome-extension/shared/quick-panel/core/types.ts`（scope/prefix 扩展）
+- `app/chrome-extension/common/message-types.ts`（workspaces + page tools + toolbox 协议）
+- `app/chrome-extension/entrypoints/background/quick-panel/page-commands-handler.ts`（新增页面工具命令）
+- `app/chrome-extension/shared/quick-panel/providers/commands-provider.ts`（argument commands + 页面工具命令入口）
 
 ---
 
@@ -314,26 +578,50 @@ app/chrome-extension/common/
 ### 新增消息类型
 
 ```typescript
+// Tabs
+QUICK_PANEL_TABS_QUERY: 'quick_panel_tabs_query',
+QUICK_PANEL_TAB_ACTIVATE: 'quick_panel_tab_activate',
+QUICK_PANEL_TAB_CLOSE: 'quick_panel_tab_close',
+
 // Tabs 二级动作
 QUICK_PANEL_TAB_SET_PINNED: 'quick_panel_tab_set_pinned',
 QUICK_PANEL_TAB_SET_MUTED: 'quick_panel_tab_set_muted',
 
 // Bookmarks
-QUICK_PANEL_BOOKMARKS_SEARCH: 'quick_panel_bookmarks_search',
-QUICK_PANEL_BOOKMARK_OPEN: 'quick_panel_bookmark_open',
-QUICK_PANEL_BOOKMARK_UPDATE: 'quick_panel_bookmark_update',
+QUICK_PANEL_BOOKMARKS_QUERY: 'quick_panel_bookmarks_query',
 QUICK_PANEL_BOOKMARK_REMOVE: 'quick_panel_bookmark_remove',
 
 // History
-QUICK_PANEL_HISTORY_SEARCH: 'quick_panel_history_search',
+QUICK_PANEL_HISTORY_QUERY: 'quick_panel_history_query',
 QUICK_PANEL_HISTORY_DELETE: 'quick_panel_history_delete',
+
+// Content
+QUICK_PANEL_CONTENT_QUERY: 'quick_panel_content_query',
+
+// Navigation & Commands
+QUICK_PANEL_OPEN_URL: 'quick_panel_open_url',
+QUICK_PANEL_PAGE_COMMAND: 'quick_panel_page_command',
 
 // Usage
 QUICK_PANEL_USAGE_RECORD: 'quick_panel_usage_record',
-QUICK_PANEL_USAGE_GET_RECENT: 'quick_panel_usage_get_recent',
+QUICK_PANEL_USAGE_GET_ENTRIES: 'quick_panel_usage_get_entries',
+QUICK_PANEL_USAGE_LIST_RECENT: 'quick_panel_usage_list_recent',
 
-// Commands
-QUICK_PANEL_COMMAND_EXECUTE: 'quick_panel_command_execute',
+// Workspaces (Phase 11+)
+QUICK_PANEL_WORKSPACES_LIST: 'quick_panel_workspaces_list',
+QUICK_PANEL_WORKSPACES_SAVE: 'quick_panel_workspaces_save',
+QUICK_PANEL_WORKSPACES_OPEN: 'quick_panel_workspaces_open',
+QUICK_PANEL_WORKSPACES_DELETE: 'quick_panel_workspaces_delete',
+
+// Clipboard / Notes / Focus (Phase 15+)
+QUICK_PANEL_CLIPBOARD_LIST: 'quick_panel_clipboard_list',
+QUICK_PANEL_CLIPBOARD_SAVE: 'quick_panel_clipboard_save',
+QUICK_PANEL_NOTES_QUERY: 'quick_panel_notes_query',
+QUICK_PANEL_NOTES_CREATE: 'quick_panel_notes_create',
+QUICK_PANEL_NOTES_DELETE: 'quick_panel_notes_delete',
+QUICK_PANEL_FOCUS_START: 'quick_panel_focus_start',
+QUICK_PANEL_FOCUS_STOP: 'quick_panel_focus_stop',
+QUICK_PANEL_FOCUS_STATUS: 'quick_panel_focus_status',
 ```
 
 ---
@@ -378,16 +666,74 @@ QUICK_PANEL_COMMAND_EXECUTE: 'quick_panel_command_execute',
 - [x] 面板打开显示最近使用（空查询时刷新 recent list）
 - [x] 搜索结果融合使用频次排序（applyUsageBoost 二次排序）
 
+### Phase 7 完成标准 ✅ (2026-01-03)
+
+- [x] `c ` scope 可返回匹配结果并显示 snippet
+- [x] 后台自动缓存正文（best-effort），并在 SPA 路由变化后更新
+- [x] 受限页面不会导致错误扩散（无法抓取则跳过）
+
+### Phase 8 完成标准 ✅ (2026-01-03)
+
+- [x] `>` Commands 增加标签管理命令（close others / close right / discard inactive / merge windows）
+- [x] 后台执行使用同一 `QUICK_PANEL_PAGE_COMMAND` 通道（不新增消息体系复杂度）
+
+### Phase 9 完成标准 ✅ (2026-01-03)
+
+- [x] `g ` / `gh ` / `npm ` / `so ` / `mdn ` 前缀可用，并只返回 Web Search 结果（不污染 tabs/bookmarks/history）
+- [x] Enter / `Cmd/Ctrl+Enter` 的打开行为与 `openMode` 一致（复用 `QUICK_PANEL_OPEN_URL`）
+- [x] URL 模板填充与编码逻辑有单元测试覆盖（`core/url-template.ts`）
+
+### Phase 10 完成标准 ✅ (2026-01-03)
+
+- [x] `>` 页面工具命令可用：Clean URL / Zen / Dark / Allow Copy / PIP / Privacy Curtain，并且支持关闭还原
+- [x] Reader Mode 形成闭环（in-page overlay，Esc/Close 关闭还原）
+- [x] 注入失败（受限页/权限）不影响 Quick Panel 主链路（best-effort）
+
+### Phase 11 完成标准 ✅ (2026-01-03)
+
+- [x] `ws ` scope 可保存/列出/搜索/恢复/删除工作区，并支持命名输入（通过 query 生成虚拟条目）
+- [x] 恢复快照不跨 incognito 边界；批量操作具备确认门槛（默认新窗口打开，当前窗口恢复需要 `Cmd/Ctrl+Enter`）
+- [x] 存储 schema 包含版本字段，支持后续迁移与回滚
+
+### Phase 12 完成标准 ✅ (2026-01-03)
+
+- [x] Argument Commands 覆盖 ≥5 个高频工具（已实现：json/url/base64/ts/uuid/jwt），并可一键复制结果
+- [x] 核心逻辑以纯函数实现，并补齐单元测试（`core/toolbox/*` + `tests/quick-panel/toolbox.test.ts`）
+- [x] 开发者工具以 “命令执行 + 导出/复制结果” 先闭环（已实现：Console export / Network capture (10s) / Performance trace (5s) / read_page export）
+
+### Phase 13 完成标准 ✅ (2026-01-03)
+
+- [x] Debug Bundle 可在 Downloads 生成报告包（目录形式，包含 screenshot/console/network/performance/read_page + manifest.json）
+- [x] API Detective 支持 start/stop 抓包、列表展示请求、复制 curl/fetch 片段，并支持请求重放（Replay 标记为危险动作）
+- [x] 支持取消与错误定位（Debug Bundle 每一步单独记录 success/error，并提供 cancel 命令；API Detective 高风险抓包提供显式“danger”入口）
+
+### Phase 14 完成标准 ✅ (2026-01-03)
+
+- [x] tool schema + 权限分级 + 二次确认机制落地（覆盖高风险动作）
+- [x] action log 可审计（至少记录：工具、参数摘要、结果摘要、时间）
+- [x] 支持 Plan mode：先展示计划，再执行（用户可确认/取消）
+
+### Phase 15 完成标准 ✅ (2026-01-03)
+
+- [x] `clip ` scope 可查看/搜索剪贴板历史（覆盖 Quick Panel 内复制来源），并支持 pin/复制（Phase 15.1 ✅）
+- [x] `note ` scope 可创建/搜索笔记并本地持久化（Phase 15.2 ✅）
+- [x] Pomodoro/Focus 可启动/停止计时并恢复状态；（可选）站点屏蔽规则可一键暂停/延长（Phase 15.3 ✅）
+- [x] Focus blocking supports timed snooze/resume (Phase 15.3 hardening ✅)
+- [x] （可选）`mon ` scope 可创建/管理网页监控并记录变更提醒（无 notifications 权限，使用徽标 + 面板内列表）（Phase 15.4 ✅）
+
 ---
 
 ## 七、风险与应对
 
-| 风险                     | 应对措施                             |
-| ------------------------ | ------------------------------------ |
-| AI Chat 改造影响现有功能 | 保留兼容 wrapper，增量测试           |
-| 键盘快捷键与网站冲突     | ShadowRoot capture + stopPropagation |
-| 大量标签页性能问题       | 虚拟滚动 + 防抖 + 分页               |
-| 特殊页面无法注入         | 提供 Popup fallback（P1）            |
+| 风险                        | 应对措施                                                         |
+| --------------------------- | ---------------------------------------------------------------- |
+| AI Chat 改造影响现有功能    | 保留兼容 wrapper，增量测试                                       |
+| 键盘快捷键与网站冲突        | ShadowRoot capture + stopPropagation                             |
+| 大量标签页性能问题          | 虚拟滚动 + 防抖 + 分页                                           |
+| 特殊页面无法注入            | 提供 Popup fallback（P1）                                        |
+| Scope 前缀扩展误触发        | 仅识别“带空格”的前缀（如 `g `），并在 UI 明确展示当前 scope      |
+| 批量操作/诊断采集的隐私风险 | 高风险命令显式提示与确认；默认本地生成与存储；可清理日志与产物   |
+| 页面工具注入兼容性风险      | Best-effort + 可关闭还原；失败不阻断主链路；避免持久化侵入式修改 |
 
 ---
 
@@ -398,6 +744,16 @@ QUICK_PANEL_COMMAND_EXECUTE: 'quick_panel_command_execute',
 | AI Chat 定位 | **作为二级视图**：通过 Tab 键或搜索 "ai" 选中进入，类 Raycast 交互 |
 | 实施节奏     | **按 Phase 分批**：先完成 Phase 1-3，验证后继续                    |
 | 快捷键       | **保持 Cmd+Shift+U**：避免与其他软件冲突                           |
+
+### 待确认决策（Phase 9+，来自 `.docs/tansuo.md`）
+
+- Scope 扩展策略：为每个引擎新增 scope（`g/gh/npm/...`） vs 引入可配置的前缀路由（更灵活但需要改动 query 协议）
+- Reader/Outline 承载方式：新增 view（更一致） vs 新标签打开（更轻量、先闭环）
+- Workspaces 存储与同步：`chrome.storage.local`（先闭环） vs `storage.sync`（跨设备，但容量/延迟/隐私需评估）
+- 批量/破坏性动作的确认门槛：统一确认 UI（一次性） vs 仅对高风险命令提示（更轻量）
+- Tab 分组能力是否纳入 P1：如需要 `tabGroups` 权限，需评估安装劝退成本与替代方案
+- 诊断套件输出格式：zip vs 目录；是否默认采集 response body（隐私/体积/权限）
+- AI Tooling：默认 “Plan mode” 是否开启、工具权限分级粒度、action log 的保存与导出策略
 
 ---
 
@@ -523,14 +879,14 @@ QUICK_PANEL_COMMAND_EXECUTE: 'quick_panel_command_execute',
 
 ### 第一批完成标准
 
-- [ ] Shell 作为唯一容器工作
-- [ ] 搜索框可输入并搜索标签页
-- [ ] 结果列表正确显示标签页
-- [ ] ↑↓ 键可导航结果列表
-- [ ] Enter 可切换到选中标签页
-- [ ] Tab 或搜索 "ai" 可进入 AI Chat
-- [ ] Esc 关闭面板
-- [ ] 现有 AI Chat 功能无回归
+- [x] Shell 作为唯一容器工作
+- [x] 搜索框可输入并搜索标签页
+- [x] 结果列表正确显示标签页
+- [x] ↑↓ 键可导航结果列表
+- [x] Enter 可切换到选中标签页
+- [x] Tab 或搜索 "ai" 可进入 AI Chat
+- [x] Esc 关闭面板
+- [x] 现有 AI Chat 功能无回归
 
 ---
 

@@ -7,7 +7,7 @@
  *
  * Type system architecture:
  * - Legacy types (./legacy-types.ts): Step-based execution model (being phased out)
- * - Action types (./actions/types.ts): DAG-based execution model (new standard)
+ * - Action types (@/entrypoints/background/replay-actions/types.ts): DAG-based execution model (new standard)
  * - Core types (this file): Flow, Node, Edge, Run records (shared by both)
  */
 

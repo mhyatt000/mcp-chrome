@@ -1,12 +1,12 @@
-// engine/policies/wait.ts — wrappers around rr-utils navigation/network waits
+// engine/policies/wait.ts — wrappers around navigation/network wait utilities
 // Keep logic centralized to avoid duplication in schedulers and nodes
 
 import { handleCallTool } from '@/entrypoints/background/tools';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
-import { waitForNavigation as rrWaitForNavigation, waitForNetworkIdle } from '../../rr-utils';
+import { waitForNavigation, waitForNetworkIdle } from '../utils/wait';
 
 export async function waitForNavigationDone(prevUrl: string, timeoutMs?: number) {
-  await rrWaitForNavigation(timeoutMs, prevUrl);
+  await waitForNavigation(timeoutMs, prevUrl);
 }
 
 export async function ensureReadPageIfWeb() {
@@ -54,7 +54,7 @@ export async function maybeQuickWaitForNav(prevUrl: string, timeoutMs?: number) 
         cleanup();
         if (seen) {
           try {
-            await rrWaitForNavigation(
+            await waitForNavigation(
               prevUrl ? Math.min(timeoutMs || 15000, 30000) : undefined,
               prevUrl,
             );

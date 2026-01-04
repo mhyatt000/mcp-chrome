@@ -60,7 +60,7 @@ vi.mock('@/shared/selector', async (importOriginal) => {
 });
 
 // Mock navigation wait wrappers to avoid real webNavigation waiting
-vi.mock('@/entrypoints/background/record-replay/engine/policies/wait', () => ({
+vi.mock('@/entrypoints/background/replay-actions/engine/policies/wait', () => ({
   waitForNavigationDone: mocks.waitForNavigationDone,
   ensureReadPageIfWeb: mocks.ensureReadPageIfWeb,
   maybeQuickWaitForNav: mocks.maybeQuickWaitForNav,
@@ -74,7 +74,7 @@ vi.mock('@/entrypoints/background/record-replay/engine/policies/wait', () => ({
 import { createMockExecCtx } from './_test-helpers';
 import { createHybridConfig } from '@/entrypoints/background/record-replay/engine/execution-mode';
 import { HybridStepExecutor } from '@/entrypoints/background/record-replay/engine/runners/step-executor';
-import { createReplayActionRegistry } from '@/entrypoints/background/record-replay/actions';
+import { createReplayActionRegistry } from '@/entrypoints/background/replay-actions';
 
 // =============================================================================
 // Test Constants
