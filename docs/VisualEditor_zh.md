@@ -9,7 +9,7 @@
 
 <div align="center">
   <a href="https://youtu.be/76_DsUU7aHs">
-    <img src="https://i9.ytimg.com/vi/76_DsUU7aHs/mqdefault.jpg?sqp=CKSKy8oG-oaymwEmCMACELQB8quKqQMa8AEB-AH8CIAC0AWKAgwIABABGEYgWChlMA8=&rs=AOn4CLCXt44RoaMGWI5uKfEchtu7_VzfRw" alt="Interactive Sizing & Layout Adjustment" style="width:100%; max-width:600px;">
+    <img src="https://img.youtube.com/vi/76_DsUU7aHs/maxresdefault.jpg" alt="Interactive Sizing & Layout Adjustment" style="width:100%; max-width:600px;">
   </a>
 </div>
 
@@ -19,7 +19,7 @@
 
 <div align="center">
   <a href="https://youtu.be/ADOzT7El2mI">
-    <img src="https://i9.ytimg.com/vi/76_DsUU7aHs/mqdefault.jpg?sqp=CKSKy8oG-oaymwEmCMACELQB8quKqQMa8AEB-AH8CIAC0AWKAgwIABABGEYgWChlMA8=&rs=AOn4CLCXt44RoaMGWI5uKfEchtu7_VzfRw" alt="Interactive Sizing & Layout Adjustment" style="width:100%; max-width:600px;">
+    <img src="https://img.youtube.com/vi/76_DsUU7aHs/maxresdefault.jpg" alt="Interactive Sizing & Layout Adjustment" style="width:100%; max-width:600px;">
   </a>
 </div>
 
@@ -29,7 +29,7 @@
 
 <div align="center">
   <a href="https://youtu.be/PaIxdpGcEEk">
-    <img src="https://i9.ytimg.com/vi/76_DsUU7aHs/mqdefault.jpg?sqp=CKSKy8oG-oaymwEmCMACELQB8quKqQMa8AEB-AH8CIAC0AWKAgwIABABGEYgWChlMA8=&rs=AOn4CLCXt44RoaMGWI5uKfEchtu7_VzfRw" alt="Interactive Sizing & Layout Adjustment" style="width:100%; max-width:600px;">
+    <img src="https://img.youtube.com/vi/76_DsUU7aHs/maxresdefault.jpg" alt="Interactive Sizing & Layout Adjustment" style="width:100%; max-width:600px;">
   </a>
 </div>
 
@@ -39,6 +39,6 @@
 
 <div align="center">
   <a href="https://youtu.be/dSkt5HaTU_s">
-    <img src="https://i9.ytimg.com/vi/76_DsUU7aHs/mqdefault.jpg?sqp=CKSKy8oG-oaymwEmCMACELQB8quKqQMa8AEB-AH8CIAC0AWKAgwIABABGEYgWChlMA8=&rs=AOn4CLCXt44RoaMGWI5uKfEchtu7_VzfRw" alt="Interactive Sizing & Layout Adjustment" style="width:100%; max-width:600px;">
+    <img src="https://img.youtube.com/vi/76_DsUU7aHs/maxresdefault.jpg" alt="Interactive Sizing & Layout Adjustment" style="width:100%; max-width:600px;">
   </a>
 </div>
