@@ -3,6 +3,8 @@ import { type Tool } from '@modelcontextprotocol/sdk/types.js';
 export const TOOL_NAMES = {
   BROWSER: {
     GET_WINDOWS_AND_TABS: 'get_windows_and_tabs',
+    GET_WINDOW_IDS: 'get-window-ids',
+    COUNT_WINDOWS_NUM_TABS: 'count-windows-num-tabs',
     SEARCH_TABS_CONTENT: 'search_tabs_content',
     NAVIGATE: 'chrome_navigate',
     SCREENSHOT: 'chrome_screenshot',
@@ -50,6 +52,24 @@ export const TOOL_SCHEMAS: Tool[] = [
   {
     name: TOOL_NAMES.BROWSER.GET_WINDOWS_AND_TABS,
     description: 'Get all currently open browser windows and tabs',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: TOOL_NAMES.BROWSER.GET_WINDOW_IDS,
+    description: 'Get a list of all currently open browser window IDs',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: TOOL_NAMES.BROWSER.COUNT_WINDOWS_NUM_TABS,
+    description: 'Get a mapping of window ID to number of tabs in that window',
     inputSchema: {
       type: 'object',
       properties: {},
