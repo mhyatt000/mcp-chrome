@@ -1,8 +1,13 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { setupTools } from './register-tools';
 
-export const createMcpServer = () => {
-  const server = new Server(
+export let mcpServer: Server | null = null;
+
+export const getMcpServer = () => {
+  if (mcpServer) {
+    return mcpServer;
+  }
+  mcpServer = new Server(
     {
       name: 'ChromeMcpServer',
       version: '1.0.0',
@@ -14,6 +19,6 @@ export const createMcpServer = () => {
     },
   );
 
-  setupTools(server);
-  return server;
+  setupTools(mcpServer);
+  return mcpServer;
 };
