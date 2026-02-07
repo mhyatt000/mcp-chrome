@@ -5,6 +5,7 @@ export const TOOL_NAMES = {
     GET_WINDOWS_AND_TABS: 'get_windows_and_tabs',
     GET_WINDOW_IDS: 'get-window-ids',
     COUNT_WINDOWS_NUM_TABS: 'count-windows-num-tabs',
+    GET_WINDOW_TABS: 'get_window_tabs',
     SEARCH_TABS_CONTENT: 'search_tabs_content',
     NAVIGATE: 'chrome_navigate',
     SCREENSHOT: 'chrome_screenshot',
@@ -74,6 +75,17 @@ export const TOOL_SCHEMAS: Tool[] = [
       type: 'object',
       properties: {},
       required: [],
+    },
+  },
+  {
+    name: TOOL_NAMES.BROWSER.GET_WINDOW_TABS,
+    description: 'Get tabs for a specific window ID',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        windowId: { type: 'number', description: 'Target window ID' },
+      },
+      required: ['windowId'],
     },
   },
   // {

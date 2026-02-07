@@ -115,6 +115,31 @@ class WindowTabCountsTool extends BaseBrowserToolExecutor {
   }
 }
 
+class WindowTabsTool extends BaseBrowserToolExecutor {
+  name = TOOL_NAMES.BROWSER.GET_WINDOW_TABS;
+  async execute(args: { windowId: number }): Promise<ToolResult> {
+    if (!args || typeof args.windowId !== 'number') {
+      return createErrorResponse('windowId is required and must be a number');
+    }
+    const parsed = await parseWindowsAndTabsResult();
+    if ('isError' in parsed) return parsed;
+    const match = parsed.windows.find((window) => window.windowId === args.windowId);
+    if (!match) {
+      return createErrorResponse(`Window not found: ${args.windowId}`);
+    }
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(match.tabs || []),
+        },
+      ],
+      isError: false,
+    };
+  }
+}
+
 export const windowTool = new WindowTool();
 export const windowIdsTool = new WindowIdsTool();
 export const windowTabCountsTool = new WindowTabCountsTool();
+export const windowTabsTool = new WindowTabsTool();
